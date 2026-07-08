@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 
 export async function POST(request: NextRequest) {
   // ── 1. Auth guard ──────────────────────────────────────────────────────────
@@ -27,8 +27,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── 3. Insert hotspot using PostGIS WKT POINT string ──────────────────────
-  const { data, error } = await supabase
+  // ── 3. Insert hotspot using PostGIS WKT POINT string via Admin Client ─────
+  const adminClient = await createAdminClient();
+  const { data, error } = await adminClient
     .from('hotspots')
     .insert({
       title,
