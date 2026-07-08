@@ -1091,102 +1091,49 @@ export default function CameraPage() {
                   style={{ scrollbarWidth: 'none' }}
                 >
                   {socialPosts.map((post) => {
-                    // Platform brand config
-                    const brandCfg = {
-                      instagram: {
-                        label: 'Instagram',
-                        bg: 'linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)',
-                        dot: '#e1306c',
-                      },
-                      tiktok: {
-                        label: 'TikTok',
-                        bg: '#010101',
-                        dot: '#69c9d0',
-                      },
-                      youtube_shorts: {
-                        label: 'Shorts',
-                        bg: '#ff0000',
-                        dot: '#ff4444',
-                      },
-                    }[post.platform];
-
-                    const likesDisplay =
-                      post.likes_count >= 1_000_000
-                        ? `${(post.likes_count / 1_000_000).toFixed(1)}M`
-                        : post.likes_count >= 1_000
-                        ? `${(post.likes_count / 1_000).toFixed(0)}K`
-                        : `${post.likes_count}`;
-
                     return (
                       <div
                         key={post.id}
-                        style={{
-                          minWidth: '158px',
-                          maxWidth: '158px',
-                          borderRadius: '14px',
-                          overflow: 'hidden',
-                          border: '1px solid rgba(255,255,255,0.07)',
-                          background: '#09090b',
-                          flexShrink: 0,
-                          display: 'flex',
-                          flexDirection: 'column',
-                        }}
+                        className="w-[180px] shrink-0 border border-zinc-900 bg-black rounded-lg overflow-hidden relative group"
                       >
-                        {/* Full-bleed image with platform badge overlay */}
-                        <div style={{ position: 'relative', width: '100%', height: '100px' }}>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={post.inspo_image_url}
-                            alt={post.caption}
-                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                          />
-                          {/* Platform badge top-left */}
-                          <div
-                            style={{
-                              position: 'absolute', top: '6px', left: '6px',
-                              background: brandCfg.bg,
-                              borderRadius: '5px',
-                              padding: '2px 5px',
-                              fontSize: '7px',
-                              fontWeight: 700,
-                              color: '#ffffff',
-                              fontFamily: 'monospace',
-                              letterSpacing: '0.05em',
-                            }}
-                          >
-                            {brandCfg.label}
-                          </div>
-                          {/* Like count badge top-right */}
-                          <div
-                            style={{
-                              position: 'absolute', top: '6px', right: '6px',
-                              background: 'rgba(0,0,0,0.7)',
-                              borderRadius: '5px',
-                              padding: '2px 5px',
-                              fontSize: '7px',
-                              fontWeight: 700,
-                              color: '#f4f4f5',
-                              fontFamily: 'monospace',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '3px',
-                            }}
-                          >
-                            <span style={{ color: brandCfg.dot }}>♥</span> {likesDisplay}
-                          </div>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={post.inspo_image_url}
+                          alt={post.caption}
+                          className="w-full aspect-[3/4] object-cover opacity-80"
+                        />
+                        
+                        {/* Platform Badges */}
+                        <div className="absolute top-3 right-3 bg-black/60 px-2 py-1 rounded border border-zinc-800 flex items-center gap-1.5 backdrop-blur-sm">
+                          {post.platform === 'instagram' && (
+                            <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+                              <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+                              <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+                            </svg>
+                          )}
+                          {post.platform === 'youtube_shorts' && (
+                            <svg className="w-3 h-3 text-red-500" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M23.498 6.163c-.272-1.016-1.074-1.819-2.09-2.09C19.57 3.61 12 3.61 12 3.61s-7.57 0-9.408.462c-1.016.271-1.819 1.074-2.09 2.09C0 8.002 0 12 0 12s0 3.998.462 5.837c.271 1.016 1.074 1.819 2.09 2.09C4.43 20.39 12 20.39 12 20.39s7.57 0 9.408-.462c1.016-.271 1.819-1.074 2.09-2.09.462-1.837.462-5.837.462-5.837s0-3.998-.462-5.837zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                            </svg>
+                          )}
+                          {post.platform === 'tiktok' && (
+                            <svg className="w-3 h-3 text-cyan-400 fill-cyan-400" viewBox="0 0 24 24">
+                              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                            </svg>
+                          )}
+                          <span className="text-[10px] font-mono uppercase text-zinc-300">
+                            {post.platform === 'youtube_shorts' ? 'Shorts' : post.platform}
+                          </span>
                         </div>
 
-                        {/* Card bottom */}
-                        <div style={{ padding: '6px 8px 7px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          {/* Handle */}
-                          <span style={{ fontSize: '8px', fontWeight: 700, color: '#e4e4e7', fontFamily: 'monospace' }}>
-                            {post.user_handle}
-                          </span>
-                          {/* Caption */}
-                          <p style={{ fontSize: '7px', color: '#71717a', fontFamily: 'monospace', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {post.caption}
+                        {/* User Information */}
+                        <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-black via-black/95 to-transparent">
+                          <p className="text-[10px] font-mono text-white truncate">{post.user_handle}</p>
+                          <p className="text-[9px] text-zinc-500 font-mono mt-0.5">
+                            {post.likes_count.toLocaleString()} engagement tokens
                           </p>
-                          {/* CTA */}
+                          
                           <button
                             onClick={() => {
                               setPinImageUrl(post.inspo_image_url);
@@ -1194,22 +1141,9 @@ export default function CameraPage() {
                               setShowSuggestions(false);
                               toast.success(`🎯 Composition loaded from ${post.user_handle}`);
                             }}
-                            style={{
-                              width: '100%',
-                              marginTop: '2px',
-                              padding: '4px 0',
-                              background: '#ffffff',
-                              border: 'none',
-                              borderRadius: '6px',
-                              color: '#09090b',
-                              fontSize: '8px',
-                              fontWeight: 700,
-                              fontFamily: 'monospace',
-                              cursor: 'pointer',
-                              letterSpacing: '0.05em',
-                            }}
+                            className="w-full mt-2.5 h-8 bg-white hover:bg-zinc-200 text-black font-medium text-[9px] rounded uppercase tracking-wider active:scale-[0.98] transition-all"
                           >
-                            USE COMPOSITION
+                            Use Composition
                           </button>
                         </div>
                       </div>
