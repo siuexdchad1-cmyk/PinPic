@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { throttle } from '@/lib/utils';
 import type { NearbyHotspot, CameraState, ProcessShotResponse, GpsCoordinates } from '@/lib/types';
+import type { SuggestedSpot } from '@/app/api/location/suggest/route';
 import PermissionsWizard from '@/components/camera/PermissionsWizard';
 
 
@@ -27,6 +28,10 @@ export default function CameraPage() {
   const [pinDescription, setPinDescription] = useState('');
   const [pinImageUrl, setPinImageUrl] = useState('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=75');
   const [pinLoading, setPinLoading] = useState(false);
+
+  const [suggestions, setSuggestions] = useState<SuggestedSpot[]>([]);
+  const [placeName, setPlaceName]     = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
 
   // ── Draw wireframe stencil on canvas ──────────────────────────────────────
@@ -189,6 +194,7 @@ export default function CameraPage() {
       };
       setGps(initGps);
       checkProximity(initGps);
+      fetchSuggestions(coords.latitude, coords.longitude);
 
       if ('geolocation' in navigator) {
         watchIdRef.current = navigator.geolocation.watchPosition(
@@ -212,6 +218,21 @@ export default function CameraPage() {
       const msg = err instanceof Error ? err.message : 'Camera access failed.';
       setErrorMsg(msg);
       setCamState('error');
+    }
+  }
+
+  async function fetchSuggestions(lat: number, lng: number) {
+    try {
+      const res = await fetch(`/api/location/suggest?lat=${lat}&lng=${lng}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.placeName) setPlaceName(data.placeName);
+      if (data.spots?.length > 0) {
+        setSuggestions(data.spots);
+        setShowSuggestions(true);
+      }
+    } catch {
+      // Suggestions are non-fatal
     }
   }
 
@@ -416,7 +437,88 @@ export default function CameraPage() {
             </div>
           )}
 
+          {/* ── Location Suggestions Tray ────────────────────────────────── */}
+          {suggestions.length > 0 && (
+            <div className="absolute bottom-28 left-0 right-0 z-10 px-2 pointer-events-auto">
+              <div
+                style={{
+                  background: 'rgba(0,0,0,0.82)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '14px',
+                  backdropFilter: 'blur(12px)',
+                }}
+              >
+                {/* Header row */}
+                <div className="flex items-center justify-between px-3 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <span style={{ fontSize: '8px', letterSpacing: '0.12em', color: '#10b981', fontFamily: 'monospace' }}>
+                      ● NEARBY
+                    </span>
+                    {placeName && (
+                      <span style={{ fontSize: '9px', color: '#71717a', fontFamily: 'monospace', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {placeName}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setShowSuggestions(v => !v)}
+                    style={{ fontSize: '9px', color: '#52525b', fontFamily: 'monospace', background: 'none', border: 'none', cursor: 'pointer' }}
+                  >
+                    {showSuggestions ? '▾ HIDE' : '▸ SHOW'}
+                  </button>
+                </div>
+
+                {/* Scrollable cards */}
+                {showSuggestions && (
+                  <div
+                    className="flex gap-2 overflow-x-auto pb-2 px-2"
+                    style={{ scrollbarWidth: 'none' }}
+                  >
+                    {suggestions.map((spot, i) => (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          setPinImageUrl(spot.imageUrl);
+                          drawStencil(spot.imageUrl);
+                          setShowSuggestions(false);
+                          toast.success(`Reference set: ${spot.name}`);
+                        }}
+                        style={{
+                          minWidth: '110px',
+                          maxWidth: '110px',
+                          borderRadius: '10px',
+                          overflow: 'hidden',
+                          border: '1px solid rgba(255,255,255,0.12)',
+                          background: 'none',
+                          cursor: 'pointer',
+                          flexShrink: 0,
+                          textAlign: 'left',
+                        }}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={spot.imageUrl}
+                          alt={spot.name}
+                          style={{ width: '100%', height: '70px', objectFit: 'cover', display: 'block' }}
+                        />
+                        <div style={{ padding: '5px 7px', background: 'rgba(0,0,0,0.7)' }}>
+                          <p style={{ fontSize: '9px', color: '#f4f4f5', fontFamily: 'monospace', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
+                            {spot.name}
+                          </p>
+                          <p style={{ fontSize: '8px', color: '#71717a', fontFamily: 'monospace', margin: 0 }}>
+                            {spot.distanceM}m · {spot.type}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Capture / Processing button */}
+
           <div className="absolute bottom-10 left-0 right-0 flex justify-center z-10">
             {camState === 'processing' ? (
               <div className="flex items-center gap-2 text-sm text-white">
