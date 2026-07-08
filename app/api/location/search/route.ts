@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// ── Social post type ────────────────────────────────────────────────────────
 export interface SocialPost {
   id:             string;
   platform:       'instagram' | 'tiktok' | 'youtube_shorts';
@@ -9,6 +8,7 @@ export interface SocialPost {
   likes_count:    number;
   caption:        string;
   location_tag:   string;
+  pose_preset_id: string; // matches classic-stand, cafe-sit, action-walk
 }
 
 export interface LocationSearchResult {
@@ -19,7 +19,6 @@ export interface LocationSearchResult {
 }
 
 // ── Curated high-quality Unsplash travel photo IDs ─────────────────────────
-// Each is a verified, publicly available Unsplash photo of genuine travel scenes
 const TRAVEL_PHOTO_IDS = [
   '1499856871958-5b9357976b82', // City at night — moody
   '1476514525535-07fb3b4ae5f1', // Mountain path — cinematic
@@ -29,26 +28,19 @@ const TRAVEL_PHOTO_IDS = [
   '1441974231531-c6227db76b6e', // Forest sunrays — aesthetic
   '1501854140801-50d01698950b', // Aerial landscape
   '1433086966358-54859d0ed716', // Waterfall — portrait
-  '1464822759023-fed622ff2c3b', // Sunset street — golden hour
-  '1519681393784-d120267933ba', // Night mountain stars
-  '1526772662000-3f88f10405ff', // Urban rooftop
-  '1534430480872-3498386e7856', // Aerial ocean bay
 ];
 
 // ── Creator handle pool ─────────────────────────────────────────────────────
 const HANDLES_INSTAGRAM = [
-  '@lens.nomad', '@golden.hour.gram', '@travel.composure',
-  '@wanderframe', '@cityviewer.ig', '@rooftop.editorial',
+  '@lens.nomad', '@golden.hour.gram', '@travel.composure', '@wanderframe'
 ];
 
 const HANDLES_TIKTOK = [
-  '@travelpov.tt', '@cinematic.shot', '@framesbyfoot',
-  '@bokeh.wanderer', '@skyline.tt', '@horizons.tok',
+  '@travelpov.tt', '@cinematic.shot', '@framesbyfoot', '@bokeh.wanderer'
 ];
 
 const HANDLES_YOUTUBE = [
-  '@TravelEdit4K', '@CinematicRoamer', '@ShortsByAltitude',
-  '@ReelLandscape', '@DailyTravelShorts', '@GoProNomad',
+  '@TravelEdit4K', '@CinematicRoamer', '@ShortsByAltitude', '@ReelLandscape'
 ];
 
 // ── Like count generator — weighted toward high-engagement ─────────────────
@@ -77,9 +69,9 @@ function buildSocialFeed(location: string, lat: number, lng: number): SocialPost
       platform === 'tiktok'       ? 82_000 + i * 12_000 :
                                     6_200  + i * 1_800;
 
-    // Unsplash CDN direct URL — no API key required, high-quality JPEG
+    // Unsplash CDN direct URL — optimized as requested
     const inspo_image_url =
-      `https://images.unsplash.com/photo-${TRAVEL_PHOTO_IDS[idx]}?w=800&q=85&auto=format&fit=crop`;
+      `https://images.unsplash.com/photo-${TRAVEL_PHOTO_IDS[idx]}?w=600&q=70&auto=format&fit=crop`;
 
     const captions = [
       `Golden hour hits different in ${location} 🌅`,
@@ -90,11 +82,9 @@ function buildSocialFeed(location: string, lat: number, lng: number): SocialPost
       `${location} from a rooftop nobody talks about`,
       `Composition tip: keep horizon at the lower third`,
       `Chasing light in ${location} every season`,
-      `The locals told me this was the spot 🗺️`,
-      `Cinematic mode but make it travel`,
-      `POV: You found the secret viewpoint`,
-      `This city never disappoints`,
     ];
+
+    const pose_preset_id = ['classic-stand', 'cafe-sit', 'action-walk'][i % 3];
 
     return {
       id: `post_${idx}_${platform}_${Date.now() + i}`,
@@ -104,6 +94,7 @@ function buildSocialFeed(location: string, lat: number, lng: number): SocialPost
       likes_count: fakeLikes(baseLikes),
       caption: captions[i % captions.length],
       location_tag: location,
+      pose_preset_id,
     };
   });
 

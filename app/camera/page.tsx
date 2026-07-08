@@ -384,6 +384,7 @@ export default function CameraPage() {
   const canvasRef   = useRef<HTMLCanvasElement>(null);
   const streamRef   = useRef<MediaStream | null>(null);
   const watchIdRef  = useRef<number | null>(null);
+  const stencilImgRef = useRef<HTMLImageElement | null>(null);
 
   const [camState,  setCamState]  = useState<CameraState>('idle');
   const [gps,       setGps]       = useState<GpsCoordinates | null>(null);
@@ -458,6 +459,7 @@ export default function CameraPage() {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
+        stencilImgRef.current = img;
         const c = ctx!;
         c.globalAlpha = 0.12;
         c.drawImage(img, 0, 0, w, h);
@@ -465,10 +467,12 @@ export default function CameraPage() {
         drawCompositionGuides(c);
       };
       img.onerror = () => {
+        stencilImgRef.current = null;
         drawCompositionGuides(ctx);
       };
       img.src = imageUrl;
     } else {
+      stencilImgRef.current = null;
       drawCompositionGuides(ctx);
     }
   }, []);
@@ -707,6 +711,13 @@ export default function CameraPage() {
       const h = canvas.height;
 
       ctx.clearRect(0, 0, w, h);
+
+      // Draw stencil overlay if loaded
+      if (stencilImgRef.current) {
+        ctx.globalAlpha = 0.12;
+        ctx.drawImage(stencilImgRef.current, 0, 0, w, h);
+        ctx.globalAlpha = 1.0;
+      }
 
       // Redraw rule-of-thirds grid
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
@@ -1139,7 +1150,11 @@ export default function CameraPage() {
                               setPinImageUrl(post.inspo_image_url);
                               drawStencil(post.inspo_image_url);
                               setShowSuggestions(false);
-                              toast.success(`🎯 Composition loaded from ${post.user_handle}`);
+                              if (post.pose_preset_id) {
+                                setSelectedPose(post.pose_preset_id);
+                                setPoseGuideActive(true);
+                              }
+                              toast.success(`🎯 Guide and Pose loaded: ${post.user_handle}`);
                             }}
                             className="w-full mt-2.5 h-8 bg-white hover:bg-zinc-200 text-black font-medium text-[9px] rounded uppercase tracking-wider active:scale-[0.98] transition-all"
                           >
