@@ -2,14 +2,365 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
-import { Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Loader2, AlertCircle, RefreshCw, Search, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { throttle } from '@/lib/utils';
 import type { NearbyHotspot, CameraState, ProcessShotResponse, GpsCoordinates } from '@/lib/types';
 import type { SuggestedSpot } from '@/app/api/location/suggest/route';
+import type { LocationSearchResult } from '@/app/api/location/search/route';
 import PermissionsWizard from '@/components/camera/PermissionsWizard';
 
+// ── TensorFlow.js / PoseNet Keypoint Interface ────────────────────────────────
+interface Keypoint {
+  part: string;
+  position: { x: number; y: number };
+  score: number;
+}
+
+// ── TF.js and PoseNet Dynamic Loader ─────────────────────────────────────────
+function loadExternalScripts(urls: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let loadedCount = 0;
+    const onLoad = () => {
+      loadedCount++;
+      if (loadedCount === urls.length) {
+        resolve();
+      }
+    };
+    const onError = () => {
+      reject(new Error('Failed to load TF.js / PoseNet scripts'));
+    };
+
+    urls.forEach((url) => {
+      if (document.querySelector(`script[src="${url}"]`)) {
+        onLoad();
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = url;
+      script.async = true;
+      script.onload = onLoad;
+      script.onerror = onError;
+      document.body.appendChild(script);
+    });
+  });
+}
+
+// ── Pose Guide Templates & Skeleton Drawing Helpers ──────────────────────────
+interface Point {
+  x: number;
+  y: number;
+}
+interface PoseTemplate {
+  name: string;
+  description: string;
+  joints: {
+    head: Point;
+    neck: Point;
+    lShoulder: Point;
+    rShoulder: Point;
+    lElbow: Point;
+    rElbow: Point;
+    lWrist: Point;
+    rWrist: Point;
+    lHip: Point;
+    rHip: Point;
+    lKnee: Point;
+    rKnee: Point;
+    lAnkle: Point;
+    rAnkle: Point;
+  };
+}
+
+const POSE_TEMPLATES: Record<string, PoseTemplate> = {
+  'classic-stand': {
+    name: 'Model Stand',
+    description: 'Casual posture with hands resting on hips',
+    joints: {
+      head: { x: 0.5, y: 0.16 },
+      neck: { x: 0.5, y: 0.24 },
+      lShoulder: { x: 0.42, y: 0.26 },
+      rShoulder: { x: 0.58, y: 0.26 },
+      lElbow: { x: 0.36, y: 0.40 },
+      rElbow: { x: 0.64, y: 0.40 },
+      lWrist: { x: 0.42, y: 0.52 },
+      rWrist: { x: 0.58, y: 0.52 },
+      lHip: { x: 0.44, y: 0.54 },
+      rHip: { x: 0.56, y: 0.54 },
+      lKnee: { x: 0.45, y: 0.72 },
+      rKnee: { x: 0.55, y: 0.72 },
+      lAnkle: { x: 0.46, y: 0.88 },
+      rAnkle: { x: 0.54, y: 0.88 },
+    }
+  },
+  'cafe-sit': {
+    name: 'Cafe Sitting',
+    description: 'Relaxed sitting pose resting chin on hand',
+    joints: {
+      head: { x: 0.46, y: 0.22 },
+      neck: { x: 0.48, y: 0.30 },
+      lShoulder: { x: 0.36, y: 0.34 },
+      rShoulder: { x: 0.56, y: 0.34 },
+      lElbow: { x: 0.30, y: 0.52 },
+      rElbow: { x: 0.52, y: 0.48 },
+      lWrist: { x: 0.42, y: 0.32 },
+      rWrist: { x: 0.56, y: 0.62 },
+      lHip: { x: 0.40, y: 0.66 },
+      rHip: { x: 0.58, y: 0.66 },
+      lKnee: { x: 0.30, y: 0.80 },
+      rKnee: { x: 0.64, y: 0.82 },
+      lAnkle: { x: 0.32, y: 0.92 },
+      rAnkle: { x: 0.60, y: 0.92 },
+    }
+  },
+  'action-walk': {
+    name: 'Casual Stride',
+    description: 'Dynamic walking posture with active leg stride',
+    joints: {
+      head: { x: 0.50, y: 0.18 },
+      neck: { x: 0.50, y: 0.26 },
+      lShoulder: { x: 0.44, y: 0.28 },
+      rShoulder: { x: 0.56, y: 0.28 },
+      lElbow: { x: 0.40, y: 0.42 },
+      rElbow: { x: 0.60, y: 0.42 },
+      lWrist: { x: 0.44, y: 0.54 },
+      rWrist: { x: 0.62, y: 0.52 },
+      lHip: { x: 0.45, y: 0.56 },
+      rHip: { x: 0.55, y: 0.56 },
+      lKnee: { x: 0.38, y: 0.72 },
+      rKnee: { x: 0.62, y: 0.72 },
+      lAnkle: { x: 0.32, y: 0.88 },
+      rAnkle: { x: 0.66, y: 0.88 },
+    }
+  }
+};
+
+function drawTemplateSkeleton(ctx: CanvasRenderingContext2D, w: number, h: number, template: PoseTemplate) {
+  const joints = template.joints;
+  
+  // Glowing neon purple/pink styling for ideal silhouette target guide
+  ctx.strokeStyle = 'rgba(168, 85, 247, 0.8)';
+  ctx.lineWidth = 3.5;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  const pt = (p: Point) => ({ x: p.x * w, y: p.y * h });
+
+  const hd = pt(joints.head);
+  const nk = pt(joints.neck);
+  const ls = pt(joints.lShoulder);
+  const rs = pt(joints.rShoulder);
+  const le = pt(joints.lElbow);
+  const re = pt(joints.rElbow);
+  const lw = pt(joints.lWrist);
+  const rw = pt(joints.rWrist);
+  const lh = pt(joints.lHip);
+  const rh = pt(joints.rHip);
+  const lk = pt(joints.lKnee);
+  const rk = pt(joints.rKnee);
+  const la = pt(joints.lAnkle);
+  const ra = pt(joints.rAnkle);
+
+  // Draw Head circle
+  ctx.beginPath();
+  ctx.arc(hd.x, hd.y, 0.045 * h, 0, 2 * Math.PI);
+  ctx.stroke();
+
+  // Neck to spine line
+  ctx.beginPath();
+  ctx.moveTo(hd.x, hd.y + 0.045 * h);
+  ctx.lineTo(nk.x, nk.y);
+  ctx.stroke();
+
+  // Shoulder line
+  ctx.beginPath();
+  ctx.moveTo(ls.x, ls.y);
+  ctx.lineTo(rs.x, rs.y);
+  ctx.stroke();
+
+  // Left Arm
+  ctx.beginPath();
+  ctx.moveTo(ls.x, ls.y);
+  ctx.lineTo(le.x, le.y);
+  ctx.lineTo(lw.x, lw.y);
+  ctx.stroke();
+
+  // Right Arm
+  ctx.beginPath();
+  ctx.moveTo(rs.x, rs.y);
+  ctx.lineTo(re.x, re.y);
+  ctx.lineTo(rw.x, rw.y);
+  ctx.stroke();
+
+  // Spine
+  const hipCenter = { x: (lh.x + rh.x) / 2, y: (lh.y + rh.y) / 2 };
+  ctx.beginPath();
+  ctx.moveTo(nk.x, nk.y);
+  ctx.lineTo(hipCenter.x, hipCenter.y);
+  ctx.stroke();
+
+  // Hip line
+  ctx.beginPath();
+  ctx.moveTo(lh.x, lh.y);
+  ctx.lineTo(rh.x, rh.y);
+  ctx.stroke();
+
+  // Left Leg
+  ctx.beginPath();
+  ctx.moveTo(lh.x, lh.y);
+  ctx.lineTo(lk.x, lk.y);
+  ctx.lineTo(la.x, la.y);
+  ctx.stroke();
+
+  // Right Leg
+  ctx.beginPath();
+  ctx.moveTo(rh.x, rh.y);
+  ctx.lineTo(rk.x, rk.y);
+  ctx.lineTo(ra.x, ra.y);
+  ctx.stroke();
+}
+
+function drawLiveSkeleton(ctx: CanvasRenderingContext2D, keypoints: Keypoint[]) {
+  const minConfidence = 0.4;
+  
+  // Neon emerald green for user live skeleton tracking
+  ctx.strokeStyle = '#10b981';
+  ctx.fillStyle = '#10b981';
+  ctx.lineWidth = 4;
+  ctx.shadowColor = '#10b981';
+  ctx.shadowBlur = 8;
+  
+  const kp = (name: string) => {
+    const point = keypoints.find((k) => k.part === name);
+    return point && point.score >= minConfidence ? point.position : null;
+  };
+
+  const drawBone = (p1: { x: number, y: number } | null, p2: { x: number, y: number } | null) => {
+    if (p1 && p2) {
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+    }
+  };
+
+  const ls = kp('leftShoulder');
+  const rs = kp('rightShoulder');
+  const le = kp('leftElbow');
+  const re = kp('rightElbow');
+  const lw = kp('leftWrist');
+  const rw = kp('rightWrist');
+  const lh = kp('leftHip');
+  const rh = kp('rightHip');
+  const lk = kp('leftKnee');
+  const rk = kp('rightKnee');
+  const la = kp('leftAnkle');
+  const ra = kp('rightAnkle');
+
+  drawBone(ls, rs);
+  drawBone(lh, rh);
+  drawBone(ls, le);
+  drawBone(le, lw);
+  drawBone(rs, re);
+  drawBone(re, rw);
+  
+  if (ls && rs && lh && rh) {
+    const midShoulder = { x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2 };
+    const midHip = { x: (lh.x + rh.x) / 2, y: (lh.y + rh.y) / 2 };
+    drawBone(midShoulder, midHip);
+  }
+  
+  drawBone(lh, lk);
+  drawBone(lk, la);
+  drawBone(rh, rk);
+  drawBone(rk, ra);
+
+  // Draw joints
+  keypoints.forEach((k) => {
+    if (k.score >= minConfidence) {
+      ctx.beginPath();
+      ctx.arc(k.position.x, k.position.y, 6, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  });
+
+  ctx.shadowBlur = 0;
+}
+
+function calculatePoseScore(keypoints: Keypoint[], template: PoseTemplate): number {
+  const parts = ['head', 'lShoulder', 'rShoulder', 'lElbow', 'rElbow', 'lWrist', 'rWrist', 'lHip', 'rHip', 'lKnee', 'rKnee', 'lAnkle', 'rAnkle'];
+  const mapping: Record<string, string> = {
+    head: 'nose',
+    lShoulder: 'leftShoulder',
+    rShoulder: 'rightShoulder',
+    lElbow: 'leftElbow',
+    rElbow: 'rightElbow',
+    lWrist: 'leftWrist',
+    rWrist: 'rightWrist',
+    lHip: 'leftHip',
+    rHip: 'rightHip',
+    lKnee: 'leftKnee',
+    rKnee: 'rightKnee',
+    lAnkle: 'leftAnkle',
+    rAnkle: 'rightAnkle'
+  };
+
+  const validKps = keypoints.filter(k => k.score >= 0.4);
+  if (validKps.length < 5) return 0;
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  validKps.forEach(k => {
+    if (k.position.x < minX) minX = k.position.x;
+    if (k.position.x > maxX) maxX = k.position.x;
+    if (k.position.y < minY) minY = k.position.y;
+    if (k.position.y > maxY) maxY = k.position.y;
+  });
+
+  const width = maxX - minX || 1;
+  const height = maxY - minY || 1;
+
+  const templatePoints = Object.values(template.joints);
+  let tMinX = Infinity, tMaxX = -Infinity, tMinY = Infinity, tMaxY = -Infinity;
+  templatePoints.forEach(p => {
+    if (p.x < tMinX) tMinX = p.x;
+    if (p.x > tMaxX) tMaxX = p.x;
+    if (p.y < tMinY) tMinY = p.y;
+    if (p.y > tMaxY) tMaxY = p.y;
+  });
+  const tWidth = tMaxX - tMinX || 1;
+  const tHeight = tMaxY - tMinY || 1;
+
+  let totalDiff = 0;
+  let count = 0;
+
+  parts.forEach(part => {
+    const userKp = keypoints.find(k => k.part === mapping[part]);
+    if (userKp && userKp.score >= 0.4) {
+      const normUserX = (userKp.position.x - minX) / width;
+      const normUserY = (userKp.position.y - minY) / height;
+
+      const tPt = template.joints[part as keyof typeof template.joints];
+      const normTemplateX = (tPt.x - tMinX) / tWidth;
+      const normTemplateY = (tPt.y - tMinY) / tHeight;
+
+      const dist = Math.sqrt(
+        Math.pow(normUserX - normTemplateX, 2) +
+        Math.pow(normUserY - normTemplateY, 2)
+      );
+      totalDiff += dist;
+      count++;
+    }
+  });
+
+  if (count === 0) return 0;
+  const avgDiff = totalDiff / count;
+
+  return Math.max(0, Math.min(100, Math.round(100 - (avgDiff * 300))));
+}
+
+// Global variable to persist loaded PoseNet model across state renders
+let poseNetModel: unknown = null;
 
 export default function CameraPage() {
   const videoRef    = useRef<HTMLVideoElement>(null);
@@ -32,6 +383,16 @@ export default function CameraPage() {
   const [suggestions, setSuggestions] = useState<SuggestedSpot[]>([]);
   const [placeName, setPlaceName]     = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // ── Search & Pose states ──────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+
+  const [poseGuideActive, setPoseGuideActive] = useState(false);
+  const [selectedPose, setSelectedPose]         = useState<string>('classic-stand');
+  const [isPoseNetLoading, setIsPoseNetLoading] = useState(false);
+  const [isPoseNetActive, setIsPoseNetActive]   = useState(false);
+  const [poseMatchScore, setPoseMatchScore]     = useState<number | null>(null);
 
 
   // ── Draw wireframe stencil on canvas ──────────────────────────────────────
@@ -236,6 +597,175 @@ export default function CameraPage() {
     }
   }
 
+  // ── PoseNet Initializer ────────────────────────────────────────────────────
+  async function initPoseNet() {
+    if (poseNetModel) return poseNetModel;
+    setIsPoseNetLoading(true);
+    try {
+      await loadExternalScripts([
+        'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js',
+        'https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet@2.2.2/dist/posenet.min.js'
+      ]);
+
+      const tf = (window as Window & { tf?: unknown }).tf;
+      const posenet = (window as Window & { posenet?: { load: (cfg: unknown) => Promise<unknown> } }).posenet;
+
+      if (tf && posenet) {
+        poseNetModel = await posenet.load({
+          architecture: 'MobileNetV1',
+          outputStride: 16,
+          inputResolution: { width: 257, height: 200 },
+          multiplier: 0.5
+        });
+        setIsPoseNetActive(true);
+        return poseNetModel;
+      } else {
+        throw new Error('TensorFlow / PoseNet failed to mount on window.');
+      }
+    } catch (err) {
+      console.error('[PoseNet Load Error]', err);
+      toast.error('Failed to start Live Pose Tracker.');
+    } finally {
+      setIsPoseNetLoading(false);
+    }
+  }
+
+  // ── Worldwide Geocoding Search Handler ──────────────────────────────────────
+  async function handleSearchLocation(e: React.FormEvent) {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+
+    setIsSearching(true);
+    try {
+      const res = await fetch(`/api/location/search?q=${encodeURIComponent(searchQuery)}`);
+      if (!res.ok) {
+        throw new Error('Location not found. Try searching another landmark.');
+      }
+      const data: LocationSearchResult = await res.json();
+
+      const virtualGps: GpsCoordinates = {
+        latitude: data.lat,
+        longitude: data.lng,
+        accuracy: 10,
+      };
+      setGps(virtualGps);
+      
+      const briefName = data.displayName.split(',')[0];
+      setPlaceName(briefName);
+
+      if (data.photos && data.photos.length > 0) {
+        const spotSuggestions: SuggestedSpot[] = data.photos.map((url, idx) => {
+          const platforms = ['Instagram', 'Snapchat', 'Flickr', 'Twitter'];
+          const platform = platforms[idx % platforms.length];
+          return {
+            name: `${briefName} capture`,
+            type: `${platform} Post`,
+            imageUrl: url,
+            lat: data.lat,
+            lng: data.lng,
+            distanceM: Math.round(Math.random() * 120 + 10)
+          };
+        });
+        setSuggestions(spotSuggestions);
+        setShowSuggestions(true);
+        setPinImageUrl(data.photos[0]);
+        drawStencil(data.photos[0]);
+      }
+
+      toast.success(`Teleported to ${briefName}! Inspiration photos loaded.`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Search failed.';
+      toast.error(msg);
+    } finally {
+      setIsSearching(false);
+    }
+  }
+
+  // ── Live Pose Guide and Skeleton Overlay Animation Loop ────────────────────
+  useEffect(() => {
+    let active = true;
+    let animId: number;
+
+    const runEstimation = async () => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (!video || !canvas || !active || !poseGuideActive) return;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      canvas.width = video.videoWidth || canvas.offsetWidth || 640;
+      canvas.height = video.videoHeight || canvas.offsetHeight || 480;
+      const w = canvas.width;
+      const h = canvas.height;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // Redraw rule-of-thirds grid
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.lineWidth = 1;
+      [w / 3, (2 * w) / 3].forEach((x) => {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+      });
+      [h / 3, (2 * h) / 3].forEach((y) => {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      });
+
+      // Draw the silhouette template skeleton
+      const template = POSE_TEMPLATES[selectedPose];
+      if (template) {
+        drawTemplateSkeleton(ctx, w, h, template);
+      }
+
+      // Estimate live user posture
+      if (poseNetModel && isPoseNetActive) {
+        try {
+          const pose = await (poseNetModel as {
+            estimateSinglePose: (img: HTMLVideoElement, config: Record<string, unknown>) => Promise<{ keypoints: Keypoint[] }>
+          }).estimateSinglePose(video, {
+            flipHorizontal: false
+          });
+
+          if (pose && pose.keypoints) {
+            drawLiveSkeleton(ctx, pose.keypoints);
+            const score = calculatePoseScore(pose.keypoints, template);
+            setPoseMatchScore(score);
+          }
+        } catch {
+          // loop exceptions are non-fatal
+        }
+      }
+
+      if (active) {
+        animId = requestAnimationFrame(runEstimation);
+      }
+    };
+
+    if (poseGuideActive) {
+      if (!poseNetModel) {
+        initPoseNet().then(() => {
+          runEstimation();
+        });
+      } else {
+        runEstimation();
+      }
+    } else {
+      // Clear canvas overlay when pose guide is closed
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx?.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      setPoseMatchScore(null);
+    }
+
+    return () => {
+      active = false;
+      cancelAnimationFrame(animId);
+    };
+  }, [poseGuideActive, selectedPose, isPoseNetActive]);
+
+
   async function handlePinHotspot(e: React.FormEvent) {
     e.preventDefault();
     if (!gps) {
@@ -385,47 +915,101 @@ export default function CameraPage() {
       {/* ── HUD Overlays (on top of video) ─────────────────────────────── */}
       {isStreaming && (
         <>
-          {/* Top status bar & Action pill */}
-          <div className="absolute top-4 left-0 right-0 flex flex-col items-center gap-2 z-10 pointer-events-none">
-            <div className="flex items-center gap-2 pointer-events-auto">
-              {camState === 'hotspot-found' && hotspot ? (
-                <div className="flex flex-col items-center gap-1">
-                  <div
-                    className="rounded border px-3 py-1 text-xs font-mono"
-                    style={{ borderColor: '#10b981', color: '#10b981', background: 'rgba(0,0,0,0.75)' }}
+
+          {/* Top Search Bar & Controls */}
+          <div className="absolute top-4 left-4 right-4 z-20 flex flex-col gap-2 pointer-events-auto">
+            <form onSubmit={handleSearchLocation} className="w-full flex gap-1.5">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
+                <input
+                  type="text"
+                  placeholder="Search location worldwide..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full h-9 pl-9 pr-4 bg-zinc-950/90 border border-zinc-800 rounded text-xs font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isSearching}
+                className="px-3 bg-zinc-950 border border-zinc-800 hover:bg-zinc-900 text-xs font-mono rounded text-zinc-300 hover:text-white"
+              >
+                {isSearching ? '...' : 'Search'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPoseGuideActive(v => !v)}
+                className={`p-2 border rounded transition-colors ${poseGuideActive ? 'bg-purple-600 border-purple-500 text-white' : 'bg-zinc-950/90 border-zinc-800 text-zinc-400 hover:text-white'}`}
+                title="Toggle Pose Guide"
+              >
+                <Sparkles className="h-4 w-4" />
+              </button>
+            </form>
+
+            {/* Context status pills */}
+            <div className="flex justify-between items-center px-1">
+              <div className="flex items-center gap-1.5">
+                {camState === 'hotspot-found' && hotspot ? (
+                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-900/50 px-2.5 py-0.5 rounded">
+                    ● HOTSPOT: {hotspot.title}
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono text-zinc-500 bg-zinc-950/70 border border-zinc-800/80 px-2.5 py-0.5 rounded">
+                    ● COMPOSER ACTIVE
+                  </span>
+                )}
+                {placeName && (
+                  <span className="text-[9px] font-mono text-zinc-400 max-w-[120px] truncate">
+                    @{placeName}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  if (!gps) {
+                    toast.error('GPS coordinates not resolved yet.');
+                    return;
+                  }
+                  setShowPinModal(true);
+                }}
+                className="text-[9px] font-mono border border-zinc-850 bg-zinc-950/90 text-zinc-400 px-2 py-0.5 rounded hover:text-white hover:border-zinc-700 transition-colors"
+              >
+                PIN CURRENT
+              </button>
+            </div>
+          </div>
+
+          {/* Floating Pose Selection HUD */}
+          {poseGuideActive && (
+            <div className="absolute top-24 right-4 z-20 flex flex-col gap-2 items-end pointer-events-auto">
+              <div className="bg-zinc-950/95 border border-zinc-800 rounded p-2 flex flex-col gap-1 text-[10px] font-mono text-zinc-400 w-32 shadow-xl">
+                <span className="text-zinc-500 text-[8px] uppercase tracking-wide">Pose Preset</span>
+                {Object.entries(POSE_TEMPLATES).map(([key, t]) => (
+                  <button
+                    key={key}
+                    onClick={() => setSelectedPose(key)}
+                    className={`px-1.5 py-0.5 rounded text-left transition-colors truncate ${selectedPose === key ? 'bg-purple-600 text-white' : 'hover:bg-zinc-900'}`}
                   >
-                    ● HOTSPOT LOCKED
-                  </div>
-                  <div
-                    className="rounded px-2 py-0.5 text-xs font-mono"
-                    style={{ color: '#a1a1aa', background: 'rgba(0,0,0,0.6)' }}
-                  >
-                    {hotspot.title}
-                  </div>
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+              {isPoseNetLoading && (
+                <div className="bg-zinc-950/90 border border-zinc-800 rounded px-2 py-1 text-[10px] font-mono text-zinc-400 flex items-center gap-1.5">
+                  <Loader2 className="h-3 w-3 animate-spin text-purple-500" />
+                  Loading AI Pose...
                 </div>
-              ) : (
-                <div
-                  className="rounded border px-3 py-1 text-xs font-mono"
-                  style={{ borderColor: '#27272a', color: '#71717a', background: 'rgba(0,0,0,0.6)' }}
-                >
-                  COMPOSITION GUIDE ACTIVE
+              )}
+              {poseMatchScore !== null && (
+                <div className="bg-zinc-950/90 border border-zinc-800 rounded px-2.5 py-1 flex items-center gap-1.5 font-mono text-xs shadow-xl">
+                  <span className="text-zinc-500">Pose Match:</span>
+                  <span className={poseMatchScore >= 75 ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
+                    {poseMatchScore}%
+                  </span>
                 </div>
               )}
             </div>
-
-            <button
-              onClick={() => {
-                if (!gps) {
-                  toast.error('GPS location not resolved yet.');
-                  return;
-                }
-                setShowPinModal(true);
-              }}
-              className="pointer-events-auto text-[10px] font-mono border border-zinc-800 bg-zinc-950/90 text-zinc-400 px-2.5 py-1 rounded hover:text-white hover:border-zinc-700 transition-colors duration-150"
-            >
-              PIN CURRENT LOCATION
-            </button>
-          </div>
+          )}
 
           {/* GPS accuracy bottom-left */}
           {gps && (
@@ -437,26 +1021,26 @@ export default function CameraPage() {
             </div>
           )}
 
-          {/* ── Location Suggestions Tray ────────────────────────────────── */}
+          {/* ── Community Inspiration Feed Tray ───────────────────────────── */}
           {suggestions.length > 0 && (
             <div className="absolute bottom-28 left-0 right-0 z-10 px-2 pointer-events-auto">
               <div
                 style={{
-                  background: 'rgba(0,0,0,0.82)',
+                  background: 'rgba(0,0,0,0.85)',
                   border: '1px solid rgba(255,255,255,0.08)',
                   borderRadius: '14px',
-                  backdropFilter: 'blur(12px)',
+                  backdropFilter: 'blur(16px)',
                 }}
               >
                 {/* Header row */}
-                <div className="flex items-center justify-between px-3 py-2">
+                <div className="flex items-center justify-between px-3.5 py-2">
                   <div className="flex items-center gap-1.5">
-                    <span style={{ fontSize: '8px', letterSpacing: '0.12em', color: '#10b981', fontFamily: 'monospace' }}>
-                      ● NEARBY
+                    <span style={{ fontSize: '9px', letterSpacing: '0.12em', color: '#10b981', fontFamily: 'monospace' }}>
+                      ● COMMUNITY FEED
                     </span>
                     {placeName && (
-                      <span style={{ fontSize: '9px', color: '#71717a', fontFamily: 'monospace', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {placeName}
+                      <span style={{ fontSize: '9px', color: '#71717a', fontFamily: 'monospace' }}>
+                        near {placeName}
                       </span>
                     )}
                   </div>
@@ -464,58 +1048,107 @@ export default function CameraPage() {
                     onClick={() => setShowSuggestions(v => !v)}
                     style={{ fontSize: '9px', color: '#52525b', fontFamily: 'monospace', background: 'none', border: 'none', cursor: 'pointer' }}
                   >
-                    {showSuggestions ? '▾ HIDE' : '▸ SHOW'}
+                    {showSuggestions ? '▾ COLLAPSE FEED' : '▸ EXPAND FEED'}
                   </button>
                 </div>
 
                 {/* Scrollable cards */}
                 {showSuggestions && (
                   <div
-                    className="flex gap-2 overflow-x-auto pb-2 px-2"
+                    className="flex gap-3 overflow-x-auto pb-3 px-3.5"
                     style={{ scrollbarWidth: 'none' }}
                   >
-                    {suggestions.map((spot, i) => (
-                      <button
-                        key={i}
-                        onClick={() => {
-                          setPinImageUrl(spot.imageUrl);
-                          drawStencil(spot.imageUrl);
-                          setShowSuggestions(false);
-                          toast.success(`Reference set: ${spot.name}`);
-                        }}
-                        style={{
-                          minWidth: '110px',
-                          maxWidth: '110px',
-                          borderRadius: '10px',
-                          overflow: 'hidden',
-                          border: '1px solid rgba(255,255,255,0.12)',
-                          background: 'none',
-                          cursor: 'pointer',
-                          flexShrink: 0,
-                          textAlign: 'left',
-                        }}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={spot.imageUrl}
-                          alt={spot.name}
-                          style={{ width: '100%', height: '70px', objectFit: 'cover', display: 'block' }}
-                        />
-                        <div style={{ padding: '5px 7px', background: 'rgba(0,0,0,0.7)' }}>
-                          <p style={{ fontSize: '9px', color: '#f4f4f5', fontFamily: 'monospace', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
-                            {spot.name}
-                          </p>
-                          <p style={{ fontSize: '8px', color: '#71717a', fontFamily: 'monospace', margin: 0 }}>
-                            {spot.distanceM}m · {spot.type}
-                          </p>
+                    {suggestions.map((spot, i) => {
+                      const platforms = ['Instagram', 'Snapchat', 'Flickr', 'Twitter'];
+                      const platform = spot.type.includes('Post') ? spot.type.split(' ')[0] : platforms[i % platforms.length];
+                      const platformColors: Record<string, string> = {
+                        Instagram: '#e1306c',
+                        Snapchat: '#eab308',
+                        Flickr: '#0063db',
+                        Twitter: '#1da1f2'
+                      };
+                      const userNames = ['@lens_traveler', '@frame_master', '@viewfinder_pro', '@composition_guru', '@pic_nomad', '@travel_reels'];
+                      const userName = userNames[i % userNames.length];
+                      const initials = userName.substring(1, 3).toUpperCase();
+
+                      return (
+                        <div
+                          key={i}
+                          style={{
+                            minWidth: '150px',
+                            maxWidth: '150px',
+                            borderRadius: '12px',
+                            overflow: 'hidden',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            background: '#09090b',
+                            flexShrink: 0,
+                            display: 'flex',
+                            flexDirection: 'column',
+                          }}
+                        >
+                          {/* Profile header */}
+                          <div style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              <div style={{ width: '16px', height: '16px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7px', fontWeight: 'bold', color: '#a1a1aa' }}>
+                                {initials}
+                              </div>
+                              <span style={{ fontSize: '8px', color: '#e4e4e7', fontWeight: 600, fontFamily: 'monospace' }}>
+                                {userName}
+                              </span>
+                            </div>
+                            <span style={{ fontSize: '7px', fontWeight: 'bold', color: platformColors[platform] ?? '#a1a1aa', fontFamily: 'monospace', marginLeft: 'auto' }}>
+                              {platform.toUpperCase()}
+                            </span>
+                          </div>
+
+                          {/* Image */}
+                          <div style={{ position: 'relative', width: '100%', height: '90px' }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={spot.imageUrl}
+                              alt={spot.name}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
+                          </div>
+
+                          {/* Action Info */}
+                          <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <p style={{ fontSize: '8px', color: '#a1a1aa', fontFamily: 'monospace', margin: 0, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                              📍 {spot.name}
+                            </p>
+                            <button
+                              onClick={() => {
+                                setPinImageUrl(spot.imageUrl);
+                                drawStencil(spot.imageUrl);
+                                setShowSuggestions(false);
+                                toast.success(`Composition set from ${userName}'s post`);
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '4px 0',
+                                background: 'rgba(255,255,255,0.08)',
+                                border: '1px solid rgba(255,255,255,0.12)',
+                                borderRadius: '6px',
+                                color: '#f4f4f5',
+                                fontSize: '8px',
+                                fontWeight: 600,
+                                fontFamily: 'monospace',
+                                cursor: 'pointer',
+                                textAlign: 'center',
+                              }}
+                            >
+                              USE COMPOSITION
+                            </button>
+                          </div>
                         </div>
-                      </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
             </div>
           )}
+
 
           {/* Capture / Processing button */}
 
