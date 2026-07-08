@@ -139,12 +139,6 @@ const POSE_TEMPLATES: Record<string, PoseTemplate> = {
 function drawTemplateSkeleton(ctx: CanvasRenderingContext2D, w: number, h: number, template: PoseTemplate) {
   const joints = template.joints;
   
-  // Glowing neon purple/pink styling for ideal silhouette target guide
-  ctx.strokeStyle = 'rgba(168, 85, 247, 0.8)';
-  ctx.lineWidth = 3.5;
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-
   const pt = (p: Point) => ({ x: p.x * w, y: p.y * h });
 
   const hd = pt(joints.head);
@@ -162,63 +156,86 @@ function drawTemplateSkeleton(ctx: CanvasRenderingContext2D, w: number, h: numbe
   const la = pt(joints.lAnkle);
   const ra = pt(joints.rAnkle);
 
-  // Draw Head circle
-  ctx.beginPath();
-  ctx.arc(hd.x, hd.y, 0.045 * h, 0, 2 * Math.PI);
-  ctx.stroke();
+  // ── 1. Draw Thick Silhouette Body Capsules (Glassmorphic limbs) ───────────
+  ctx.strokeStyle = 'rgba(168, 85, 247, 0.15)';
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
 
-  // Neck to spine line
-  ctx.beginPath();
-  ctx.moveTo(hd.x, hd.y + 0.045 * h);
-  ctx.lineTo(nk.x, nk.y);
-  ctx.stroke();
+  const drawLimbCapsule = (p1: { x: number, y: number }, p2: { x: number, y: number }) => {
+    ctx.lineWidth = 24; // Thick body capsule width
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+  };
 
-  // Shoulder line
+  // Draw limb capsules
+  drawLimbCapsule(ls, le);
+  drawLimbCapsule(le, lw);
+  drawLimbCapsule(rs, re);
+  drawLimbCapsule(re, rw);
+  drawLimbCapsule(lh, lk);
+  drawLimbCapsule(lk, la);
+  drawLimbCapsule(rh, rk);
+  drawLimbCapsule(rk, ra);
+
+  // ── 2. Draw Filled Torso & Head ──────────────────────────────────────────
+  // Torso polygon
+  ctx.fillStyle = 'rgba(168, 85, 247, 0.1)';
   ctx.beginPath();
   ctx.moveTo(ls.x, ls.y);
   ctx.lineTo(rs.x, rs.y);
-  ctx.stroke();
-
-  // Left Arm
-  ctx.beginPath();
-  ctx.moveTo(ls.x, ls.y);
-  ctx.lineTo(le.x, le.y);
-  ctx.lineTo(lw.x, lw.y);
-  ctx.stroke();
-
-  // Right Arm
-  ctx.beginPath();
-  ctx.moveTo(rs.x, rs.y);
-  ctx.lineTo(re.x, re.y);
-  ctx.lineTo(rw.x, rw.y);
-  ctx.stroke();
-
-  // Spine
-  const hipCenter = { x: (lh.x + rh.x) / 2, y: (lh.y + rh.y) / 2 };
-  ctx.beginPath();
-  ctx.moveTo(nk.x, nk.y);
-  ctx.lineTo(hipCenter.x, hipCenter.y);
-  ctx.stroke();
-
-  // Hip line
-  ctx.beginPath();
-  ctx.moveTo(lh.x, lh.y);
   ctx.lineTo(rh.x, rh.y);
-  ctx.stroke();
+  ctx.lineTo(lh.x, lh.y);
+  ctx.closePath();
+  ctx.fill();
 
-  // Left Leg
+  // Head filled circle
+  ctx.fillStyle = 'rgba(168, 85, 247, 0.2)';
   ctx.beginPath();
-  ctx.moveTo(lh.x, lh.y);
-  ctx.lineTo(lk.x, lk.y);
-  ctx.lineTo(la.x, la.y);
-  ctx.stroke();
+  ctx.arc(hd.x, hd.y, 0.045 * h, 0, 2 * Math.PI);
+  ctx.fill();
 
-  // Right Leg
-  ctx.beginPath();
-  ctx.moveTo(rh.x, rh.y);
-  ctx.lineTo(rk.x, rk.y);
-  ctx.lineTo(ra.x, ra.y);
-  ctx.stroke();
+  // ── 3. Draw Sharp Outline Skeleton (Center bone guides) ────────────────────
+  ctx.strokeStyle = 'rgba(168, 85, 247, 0.7)';
+  ctx.lineWidth = 2;
+
+  const drawBoneLine = (p1: { x: number, y: number }, p2: { x: number, y: number }) => {
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+  };
+
+  drawBoneLine(hd, nk);
+  drawBoneLine(ls, rs);
+  drawBoneLine(lh, rh);
+  drawBoneLine(ls, le);
+  drawBoneLine(le, lw);
+  drawBoneLine(rs, re);
+  drawBoneLine(re, rw);
+  drawBoneLine(lh, lk);
+  drawBoneLine(lk, la);
+  drawBoneLine(rh, rk);
+  drawBoneLine(rk, ra);
+  
+  const hipCenter = { x: (lh.x + rh.x) / 2, y: (lh.y + rh.y) / 2 };
+  drawBoneLine(nk, hipCenter);
+
+  // ── 4. Draw Glowing white-rimmed target joint nodes ────────────────────────
+  const drawTargetJoint = (p: { x: number, y: number }) => {
+    ctx.fillStyle = 'rgba(168, 85, 247, 0.9)';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+  };
+
+  [hd, ls, rs, le, re, lw, rw, lh, rh, lk, rk, la, ra].forEach((j) => {
+    drawTargetJoint(j);
+  });
 }
 
 function drawLiveSkeleton(ctx: CanvasRenderingContext2D, keypoints: Keypoint[]) {

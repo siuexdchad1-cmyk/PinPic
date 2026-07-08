@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
 
         // Compose a search query for an Unsplash photo
         const searchTerm  = encodeURIComponent(`${name} ${cityName} travel photography`);
-        const imageUrl    = `https://source.unsplash.com/featured/800x600/?${searchTerm}`;
+        const imageUrl    = `https://images.unsplash.com/featured/800x600/?${searchTerm}`;
 
         return {
           name,

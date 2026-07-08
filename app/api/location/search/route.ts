@@ -37,29 +37,59 @@ export async function GET(request: NextRequest) {
     const lng = parseFloat(match.lon);
     const displayName = match.display_name;
 
-    // ── 2. Create 6 distinct mock/live reference photo URLs ─────────────────
-    // We use high-quality Unsplash search keywords to simulate community posts.
-    // Each photo gets a distinct keyword index to guarantee diversity.
-    const searchTerms = [
-      `${q} landscape travel`,
-      `${q} aesthetic perspective`,
-      `${q} sunset architecture`,
-      `${q} street photography`,
-      `${q} landmark composition`,
-      `${q} portrait framing`
-    ];
+    // ── 2. Resolve geolocated photos (Wikimedia Commons + Unsplash) ────────
+    let photos: string[] = [];
 
-    const photos = searchTerms.map((term, i) => {
-      // Adding a seed query param forces Unsplash source to serve different images
-      const encoded = encodeURIComponent(term);
-      return `https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=75&auto=format&fit=crop&sig=${i}&q_term=${encoded}`;
-    });
+    try {
+      // Geolocated Wikimedia search within 5km radius
+      const wikiGeosearchUrl = `https://commons.wikimedia.org/w/api.php?action=query&list=geosearch&gsradius=5000&gscoord=${lat}|${lng}&gslimit=6&format=json&origin=*`;
+      const wikiRes = await fetch(wikiGeosearchUrl, { next: { revalidate: 3600 } });
+      
+      if (wikiRes.ok) {
+        const wikiData = await wikiRes.json();
+        const pages = (wikiData.query?.geosearch ?? []) as { pageid: number }[];
+        
+        if (pages.length > 0) {
+          const pageids = pages.map((p) => p.pageid).join('|');
+          const imgUrlFetch = `https://commons.wikimedia.org/w/api.php?action=query&pageids=${pageids}&prop=imageinfo&iiprop=url&format=json&origin=*`;
+          const imgRes = await fetch(imgUrlFetch, { next: { revalidate: 3600 } });
+          
+          if (imgRes.ok) {
+            const imgData = await imgRes.json();
+            const imgPages = Object.values(imgData.query?.pages ?? {}) as { imageinfo?: { url: string }[] }[];
+            photos = imgPages
+              .map((p) => p.imageinfo?.[0]?.url)
+              .filter((url): url is string => typeof url === 'string' && url.startsWith('http'));
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Wikimedia geosearch failed, using Unsplash fallback:', e);
+    }
+
+    // Fill remaining photos using dynamic Unsplash search endpoints to guarantee diversity
+    if (photos.length < 6) {
+      const searchTerms = [
+        `${q} travel photography`,
+        `${q} aesthetic view`,
+        `${q} scenery landmark`,
+        `${q} streets`,
+        `${q} architecture`,
+        `${q} landscape`
+      ];
+
+      const need = 6 - photos.length;
+      for (let i = 0; i < need; i++) {
+        const encoded = encodeURIComponent(searchTerms[i]);
+        photos.push(`https://images.unsplash.com/featured/800x600/?${encoded}&sig=${i}`);
+      }
+    }
 
     const result: LocationSearchResult = {
       lat,
       lng,
       displayName,
-      photos
+      photos: photos.slice(0, 6)
     };
 
     return NextResponse.json(result);
