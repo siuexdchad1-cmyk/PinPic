@@ -18,111 +18,190 @@ export interface LocationSearchResult {
   posts:       SocialPost[];
 }
 
-// ── Curated high-quality Unsplash travel photo IDs ─────────────────────────
-const TRAVEL_PHOTO_IDS = [
-  '1499856871958-5b9357976b82', // City at night — moody
-  '1476514525535-07fb3b4ae5f1', // Mountain path — cinematic
-  '1506905925346-21bda4d32df4', // Alpine lake reflection
-  '1469474968028-56623f02e42e', // Nature vista — editorial
-  '1493246507139-91e8fad9978e', // Mountain peak — dramatic
-  '1441974231531-c6227db76b6e', // Forest sunrays — aesthetic
-  '1501854140801-50d01698950b', // Aerial landscape
-  '1433086966358-54859d0ed716', // Waterfall — portrait
+// ── Curated fallback travel lifestyle Unsplash photos (as requested) ────────
+const DEV_FALLBACK_POSTS: SocialPost[] = [
+  {
+    id: 'ig_dev_01',
+    platform: 'instagram',
+    user_handle: '@candid.travels',
+    likes_count: 14200,
+    inspo_image_url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=600&q=70&auto=format',
+    caption: 'Golden hour framing along the coastal ridges.',
+    location_tag: 'Coastal Ridge',
+    pose_preset_id: 'classic-stand'
+  },
+  {
+    id: 'ig_dev_02',
+    platform: 'instagram',
+    user_handle: '@nomad.frame',
+    likes_count: 9800,
+    inspo_image_url: 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=600&q=70&auto=format',
+    caption: 'Leading lines walking down the mountain trail.',
+    location_tag: 'Mountain Trail',
+    pose_preset_id: 'action-walk'
+  },
+  {
+    id: 'ig_dev_03',
+    platform: 'instagram',
+    user_handle: '@editorial.roam',
+    likes_count: 22100,
+    inspo_image_url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&q=70&auto=format',
+    caption: 'Symmetrical rule-of-thirds alignment from the shore.',
+    location_tag: 'Seaside Dunes',
+    pose_preset_id: 'classic-stand'
+  },
+  {
+    id: 'ig_dev_04',
+    platform: 'instagram',
+    user_handle: '@rooftop.view',
+    likes_count: 18500,
+    inspo_image_url: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=600&q=70&auto=format',
+    caption: 'Urban perspective composition framing industrial elements.',
+    location_tag: 'Metropolis Core',
+    pose_preset_id: 'cafe-sit'
+  },
+  {
+    id: 'ig_dev_05',
+    platform: 'instagram',
+    user_handle: '@scenery.chaser',
+    likes_count: 31000,
+    inspo_image_url: 'https://images.unsplash.com/photo-1501854140801-50d01698950b?w=600&q=70&auto=format',
+    caption: 'Landscape alignment with natural horizon accentuation.',
+    location_tag: 'Alpine Peak',
+    pose_preset_id: 'classic-stand'
+  },
+  {
+    id: 'ig_dev_06',
+    platform: 'instagram',
+    user_handle: '@aesthetic.walks',
+    likes_count: 11400,
+    inspo_image_url: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=600&q=70&auto=format',
+    caption: 'Depth guide centered within dense woodland paths.',
+    location_tag: 'Forest Sanctuary',
+    pose_preset_id: 'action-walk'
+  },
+  {
+    id: 'ig_dev_07',
+    platform: 'instagram',
+    user_handle: '@viewfinder.pro',
+    likes_count: 27800,
+    inspo_image_url: 'https://images.unsplash.com/photo-1499856871958-5b9357976b82?w=600&q=70&auto=format',
+    caption: 'Low-angle reflection from the plaza stones.',
+    location_tag: 'Piazza Symmetrics',
+    pose_preset_id: 'cafe-sit'
+  },
+  {
+    id: 'ig_dev_08',
+    platform: 'instagram',
+    user_handle: '@bokeh.lens',
+    likes_count: 15900,
+    inspo_image_url: 'https://images.unsplash.com/photo-1433086966358-54859d0ed716?w=600&q=70&auto=format',
+    caption: 'Cinematic alignment against vertical waterfalls.',
+    location_tag: 'Valley Cascades',
+    pose_preset_id: 'classic-stand'
+  }
 ];
 
-// ── Creator handle pool ─────────────────────────────────────────────────────
-const HANDLES_INSTAGRAM = [
-  '@lens.nomad', '@golden.hour.gram', '@travel.composure', '@wanderframe'
-];
-
-
-// ── Like count generator — weighted toward high-engagement ─────────────────
-function fakeLikes(base: number): number {
-  return base + Math.floor(Math.random() * base * 0.4);
-}
-
-// ── Social scraper simulation (production-ready structure) ──────────────────
-function buildSocialFeed(location: string, lat: number, lng: number): SocialPost[] {
-  const seed = Math.abs(Math.round(lat * 1000 + lng * 1000)) % TRAVEL_PHOTO_IDS.length;
-
-  const posts: SocialPost[] = TRAVEL_PHOTO_IDS.map((photoId, i) => {
-    const idx = (seed + i) % TRAVEL_PHOTO_IDS.length;
-    const platform = 'instagram' as const;
-    const handle = HANDLES_INSTAGRAM[i % HANDLES_INSTAGRAM.length];
-    const baseLikes = 12_400 + i * 2_800;
-
-    // Unsplash CDN direct URL — optimized as requested
-    const inspo_image_url =
-      `https://images.unsplash.com/photo-${TRAVEL_PHOTO_IDS[idx]}?w=600&q=70&auto=format&fit=crop`;
-
-    const captions = [
-      `Golden hour hits different in ${location} 🌅`,
-      `Found this angle after 2km hike — worth it 📸`,
-      `Rule of thirds + ${location} = perfection`,
-      `No filter needed here, trust me`,
-      `Shot this at 5am. Alarm was worth it. ✨`,
-      `${location} from a rooftop nobody talks about`,
-      `Composition tip: keep horizon at the lower third`,
-      `Chasing light in ${location} every season`,
-    ];
-
-    const pose_preset_id = ['classic-stand', 'cafe-sit', 'action-walk'][i % 3];
-
-    return {
-      id: `post_${idx}_${platform}_${Date.now() + i}`,
-      platform,
-      inspo_image_url,
-      user_handle: handle,
-      likes_count: fakeLikes(baseLikes),
-      caption: captions[i % captions.length],
-      location_tag: location,
-      pose_preset_id,
-    };
-  });
-
-  return posts;
-}
-
-// ── Route handler ───────────────────────────────────────────────────────────
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
+  const latParam = searchParams.get('lat');
+  const lngParam = searchParams.get('lng');
   const q = searchParams.get('q');
 
-  if (!q || !q.trim()) {
-    return NextResponse.json({ error: 'Search query required.' }, { status: 400 });
-  }
+  let lat = 0;
+  let lng = 0;
+  let displayName = 'Current Location';
 
+  // ── 1. Geocoding / Parameters Resolution ──────────────────────────────────
   try {
-    // ── 1. Geocode via Nominatim ────────────────────────────────────────────
-    const geocodeUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`;
-    const geocodeRes = await fetch(geocodeUrl, {
-      headers: { 'User-Agent': 'PinPic/1.0 (educational project)' },
-      next: { revalidate: 3600 }
-    });
+    if (latParam && lngParam) {
+      lat = parseFloat(latParam);
+      lng = parseFloat(lngParam);
+    } else if (q && q.trim()) {
+      // Clean, minimal geocoding search fallback without academic Wikimedia logic
+      const geocodeUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`;
+      const geocodeRes = await fetch(geocodeUrl, {
+        headers: { 'User-Agent': 'PinPic/1.0 (social proxy actor)' },
+        next: { revalidate: 3600 }
+      });
 
-    if (!geocodeRes.ok) throw new Error('Geocoding service unavailable.');
-
-    const results = await geocodeRes.json();
-    if (!results || results.length === 0) {
-      return NextResponse.json({ error: 'No locations found for this query.' }, { status: 404 });
+      if (geocodeRes.ok) {
+        const results = await geocodeRes.json();
+        if (results && results.length > 0) {
+          const match = results[0];
+          lat = parseFloat(match.lat);
+          lng = parseFloat(match.lon);
+          displayName = match.display_name.split(',')[0];
+        }
+      }
     }
-
-    const match = results[0];
-    const lat = parseFloat(match.lat);
-    const lng = parseFloat(match.lon);
-    const rawName: string = match.display_name ?? q;
-    const displayName = rawName;
-    const locationLabel = rawName.split(',')[0];
-
-    // ── 2. Build social feed ────────────────────────────────────────────────
-    const posts = buildSocialFeed(locationLabel, lat, lng);
-
-    const result: LocationSearchResult = { lat, lng, displayName, posts };
-    return NextResponse.json(result);
-
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : 'Search failed. Try again.';
-    console.error('[/api/location/search] Error:', msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+  } catch (err) {
+    console.warn('[/api/location/search] Coordinates resolution issue:', err);
   }
+
+  // If no valid coordinates can be parsed, return standard baseline default coords
+  if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) {
+    lat = 48.8614;
+    lng = 2.2885;
+    displayName = 'Default Coordinates';
+  }
+
+  // ── 2. Apify Scraper Integration Wrapper ──────────────────────────────────
+  const apifyToken = process.env.APIFY_API_TOKEN;
+
+  if (apifyToken) {
+    try {
+      // Call Apify actor synchronously, passing coordinates query
+      const apifyUrl = `https://api.apify.com/v2/acts/apidojo~instagram-location-scraper/run-sync-get-dataset-items?token=${apifyToken}`;
+      const apifyResponse = await fetch(apifyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          searchQueries: [`${lat},${lng}`],
+          maxItems: 8
+        }),
+        next: { revalidate: 120 } // cache requests briefly to prevent rate limits
+      });
+
+      if (apifyResponse.ok) {
+        const items = await apifyResponse.json();
+        if (Array.isArray(items) && items.length > 0) {
+          const mappedPosts: SocialPost[] = items.slice(0, 8).map((item, idx) => ({
+            id: item.id || item.code || `ig_${lat}_${lng}_${idx}`,
+            platform: 'instagram' as const,
+            inspo_image_url: item.displayUrl || item.imageUrl || DEV_FALLBACK_POSTS[idx % 8].inspo_image_url,
+            user_handle: item.ownerUsername ? `@${item.ownerUsername}` : `@creator_${idx}`,
+            likes_count: item.likesCount || Math.floor(Math.random() * 25000 + 1200),
+            caption: item.caption || 'Authentic composition perspective.',
+            location_tag: displayName,
+            pose_preset_id: ['classic-stand', 'cafe-sit', 'action-walk'][idx % 3]
+          }));
+
+          return NextResponse.json({
+            lat,
+            lng,
+            displayName,
+            posts: mappedPosts
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[/api/location/search] Apify Scraper call failed. Running dev fallback.', e);
+    }
+  }
+
+  // ── 3. Developer / Offline Fallback Sequence ──────────────────────────────
+  const finalPosts = DEV_FALLBACK_POSTS.map(post => ({
+    ...post,
+    location_tag: displayName
+  }));
+
+  const result: LocationSearchResult = {
+    lat,
+    lng,
+    displayName,
+    posts: finalPosts
+  };
+
+  return NextResponse.json(result);
 }

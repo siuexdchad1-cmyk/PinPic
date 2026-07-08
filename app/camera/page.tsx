@@ -336,29 +336,56 @@ export default function CameraPage() {
   const checkProximity = useCallback(
     // eslint-disable-next-line react-hooks/exhaustive-deps
     throttle(async (coords: GpsCoordinates) => {
+      // 1. Proximity check against Database hotspots (geofencing)
       try {
         const res = await fetch(
           `/api/hotspots/nearby?lat=${coords.latitude}&lng=${coords.longitude}&radius=15`
         );
-        if (!res.ok) return;
-        const json = await res.json();
-        const nearest: NearbyHotspot | undefined = json.hotspots?.[0];
-        if (nearest) {
-          setHotspot(nearest);
-          setCamState('hotspot-found');
-          drawStencil(nearest.inspo_image_url);
-        } else {
-          setHotspot(null);
-          if (camState === 'hotspot-found') {
-            setCamState('streaming');
+        if (res.ok) {
+          const json = await res.json();
+          const nearest: NearbyHotspot | undefined = json.hotspots?.[0];
+          if (nearest) {
+            setHotspot(nearest);
+            setCamState('hotspot-found');
+            setPinImageUrl(nearest.inspo_image_url);
+            drawStencil(nearest.inspo_image_url);
+            return;
           }
-          drawStencil(null);
         }
       } catch {
-        // Proximity check failure is non-fatal
+        // Non-fatal database geofence check
+      }
+
+      // 2. Fetch automated local social feed near active GPS coordinate (universal fallback)
+      try {
+        const res = await fetch(
+          `/api/location/search?lat=${coords.latitude}&lng=${coords.longitude}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.posts && data.posts.length > 0) {
+            setSocialPosts(data.posts);
+            if (data.placeName || data.displayName) {
+              setPlaceName(data.placeName || data.displayName);
+            }
+            setShowSuggestions(true);
+
+            // Automatically load the nearest/first social post as the composition stencil overlay
+            const firstPost = data.posts[0];
+            setPinImageUrl(firstPost.inspo_image_url);
+            drawStencil(firstPost.inspo_image_url);
+
+            if (firstPost.pose_preset_id) {
+              setSelectedPose(firstPost.pose_preset_id);
+              setPoseGuideActive(true);
+            }
+          }
+        }
+      } catch {
+        // Universal search check failure is non-fatal
       }
     }, 3000),
-    [drawStencil, camState]
+    [drawStencil]
   );
 
   // ── Start camera stream ────────────────────────────────────────────────────
@@ -985,7 +1012,7 @@ export default function CameraPage() {
                     return (
                       <div
                         key={post.id}
-                        className="w-[180px] shrink-0 border border-zinc-900 bg-black rounded-lg overflow-hidden relative group"
+                        className="w-[180px] shrink-0 border border-zinc-900 bg-black rounded-none overflow-hidden relative group"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
@@ -995,7 +1022,7 @@ export default function CameraPage() {
                         />
                         
                         {/* Platform Badges */}
-                        <div className="absolute top-3 right-3 bg-black/60 px-2 py-1 rounded border border-zinc-800 flex items-center gap-1.5 backdrop-blur-sm">
+                        <div className="absolute top-3 right-3 bg-black px-2 py-1 border border-zinc-900 flex items-center gap-1.5">
                           <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
                             <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
@@ -1007,9 +1034,9 @@ export default function CameraPage() {
                         </div>
 
                         {/* User Information */}
-                        <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-black via-black/95 to-transparent">
+                        <div className="absolute bottom-0 inset-x-0 p-3 bg-black border-t border-zinc-900 flex flex-col gap-0.5">
                           <p className="text-[10px] font-mono text-white truncate">{post.user_handle}</p>
-                          <p className="text-[9px] text-zinc-500 font-mono mt-0.5">
+                          <p className="text-[9px] text-zinc-500 font-mono">
                             {post.likes_count.toLocaleString()} engagement tokens
                           </p>
                           
@@ -1024,7 +1051,7 @@ export default function CameraPage() {
                               }
                               toast.success(`🎯 Guide and Pose loaded: ${post.user_handle}`);
                             }}
-                            className="w-full mt-2.5 h-8 bg-white hover:bg-zinc-200 text-black font-medium text-[9px] rounded uppercase tracking-wider active:scale-[0.98] transition-all"
+                            className="w-full mt-2.5 h-8 bg-white hover:bg-zinc-200 text-black font-mono font-medium text-[9px] rounded-none uppercase tracking-wider active:scale-[0.98] transition-all"
                           >
                             Use Composition
                           </button>

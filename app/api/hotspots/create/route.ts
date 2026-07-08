@@ -45,12 +45,17 @@ export async function POST(request: NextRequest) {
 
   const { title, description, inspoImageUrl, lat, lng } = body;
 
-  if (!title || !inspoImageUrl || lat === undefined || lng === undefined) {
+  if (!title || lat === undefined || lng === undefined) {
     return NextResponse.json(
-      { error: 'title, inspoImageUrl, lat, and lng are required.' },
+      { error: 'title, lat, and lng are required.' },
       { status: 400 }
     );
   }
+
+  // Enforce high-quality, high-vibe travel reference photo fallback out of the box
+  const finalInspoImageUrl = (inspoImageUrl && inspoImageUrl.trim())
+    ? inspoImageUrl
+    : 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=75&auto=format';
 
   // ── 3. Initialize Admin Client using SUPABASE_SERVICE_ROLE_KEY to bypass RLS ─
   const adminClient = await createAdminClient();
@@ -65,7 +70,7 @@ export async function POST(request: NextRequest) {
       {
         title,
         description,
-        inspo_image_url: inspoImageUrl,
+        inspo_image_url: finalInspoImageUrl,
         lat: parseFloat(lat),
         lng: parseFloat(lng)
       }
@@ -89,7 +94,7 @@ export async function POST(request: NextRequest) {
       .insert({
         title,
         description,
-        inspo_image_url: inspoImageUrl,
+        inspo_image_url: finalInspoImageUrl,
         location: `POINT(${lng} ${lat})` // PostgREST WKT Point formatting
       })
       .select()
