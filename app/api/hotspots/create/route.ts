@@ -1,10 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 
 export async function POST(request: NextRequest) {
-  // ── 1. Auth guard — parses incoming cookies automatically via server client ──
+  // ── 1. Auth guard — explicitly extract incoming user session token from cookies ──
+  const cookieStore = await cookies();
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const projectRef = supabaseUrl.split('//')[1]?.split('.')[0] || '';
+  const cookieName = `sb-${projectRef}-auth-token`;
+
+  const authCookie = cookieStore.get(cookieName);
+  if (!authCookie || !authCookie.value) {
+    return NextResponse.json({ error: 'Unauthorized. No session cookie found.' }, { status: 401 });
+  }
+
+  // Parse the access token from session cookie structure
+  let accessToken: string | undefined;
+  try {
+    const parsed = JSON.parse(authCookie.value);
+    accessToken = parsed.access_token;
+  } catch {
+    accessToken = authCookie.value; // Fallback if raw
+  }
+
+  if (!accessToken) {
+    return NextResponse.json({ error: 'Unauthorized. Empty session token.' }, { status: 401 });
+  }
+
+  // Authenticate user with the session token
   const supabase = await createClient();
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
 
   if (authError || !user) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
@@ -27,7 +52,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── 3. Initialize Admin Client to bypass client RLS insertion limits ───────
+  // ── 3. Initialize Admin Client using SUPABASE_SERVICE_ROLE_KEY to bypass RLS ─
   const adminClient = await createAdminClient();
 
   // Try calling the direct RPC function mapping coordinates via ST_SetSRID/ST_MakePoint
@@ -55,10 +80,10 @@ export async function POST(request: NextRequest) {
     insertError = err;
   }
 
-  // Fallback to standard WKT POINT string insertion if the database helper function is missing
+  // Fallback to WKT POINT string insertion if the database RPC function is missing
   if (insertError || !data) {
     console.warn('[/api/hotspots/create] RPC fallback: executing WKT format insertion.');
-    
+
     const { data: wktData, error: wktError } = await adminClient
       .from('hotspots')
       .insert({
