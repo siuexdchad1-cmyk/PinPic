@@ -317,15 +317,32 @@ VALUES
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
--- MIGRATION COMPLETE
+-- STEP 13: RPC function to create hotspot bypassing client-side RLS limitations
 -- ---------------------------------------------------------------------------
--- To add more hotspots for any GPS location on Earth, run:
---   INSERT INTO public.hotspots (title, description, location, inspo_image_url)
---   VALUES (
---     'Your Spot Name',
---     'Composition description',
---     ST_SetSRID(ST_MakePoint(<longitude>, <latitude>), 4326)::geography,
---     'https://images.unsplash.com/photo-<id>?w=400&q=70&auto=format'
---   );
--- Note: ST_MakePoint takes LONGITUDE first, then LATITUDE.
+CREATE OR REPLACE FUNCTION public.create_custom_hotspot(
+  title           text,
+  description     text,
+  inspo_image_url text,
+  lat             double precision,
+  lng             double precision
+)
+RETURNS public.hotspots
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  new_hotspot public.hotspots;
+BEGIN
+  INSERT INTO public.hotspots (title, description, location, inspo_image_url)
+  VALUES (
+    title,
+    description,
+    ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography,
+    inspo_image_url
+  )
+  RETURNING * INTO new_hotspot;
+  
+  RETURN new_hotspot;
+END;
+$$;
 -- =============================================================================

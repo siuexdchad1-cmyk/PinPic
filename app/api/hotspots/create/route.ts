@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 
 export async function POST(request: NextRequest) {
-  // ── 1. Auth guard ──────────────────────────────────────────────────────────
+  // ── 1. Auth guard — parses incoming cookies automatically via server client ──
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
 
@@ -27,25 +27,57 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── 3. Insert hotspot using PostGIS WKT POINT string via Admin Client ─────
+  // ── 3. Initialize Admin Client to bypass client RLS insertion limits ───────
   const adminClient = await createAdminClient();
-  const { data, error } = await adminClient
-    .from('hotspots')
-    .insert({
-      title,
-      description,
-      inspo_image_url: inspoImageUrl,
-      location: `POINT(${lng} ${lat})`, // PostGIS expects longitude latitude order
-    })
-    .select()
-    .single();
 
-  if (error) {
-    console.error('[/api/hotspots/create] Error inserting hotspot:', error.message);
-    return NextResponse.json(
-      { error: 'Failed to create custom hotspot.' },
-      { status: 500 }
+  // Try calling the direct RPC function mapping coordinates via ST_SetSRID/ST_MakePoint
+  let data = null;
+  let insertError = null;
+
+  try {
+    const { data: rpcData, error: rpcError } = await adminClient.rpc(
+      'create_custom_hotspot',
+      {
+        title,
+        description,
+        inspo_image_url: inspoImageUrl,
+        lat: parseFloat(lat),
+        lng: parseFloat(lng)
+      }
     );
+
+    if (!rpcError && rpcData) {
+      data = rpcData;
+    } else {
+      insertError = rpcError;
+    }
+  } catch (err: unknown) {
+    insertError = err;
+  }
+
+  // Fallback to standard WKT POINT string insertion if the database helper function is missing
+  if (insertError || !data) {
+    console.warn('[/api/hotspots/create] RPC fallback: executing WKT format insertion.');
+    
+    const { data: wktData, error: wktError } = await adminClient
+      .from('hotspots')
+      .insert({
+        title,
+        description,
+        inspo_image_url: inspoImageUrl,
+        location: `POINT(${lng} ${lat})` // PostgREST WKT Point formatting
+      })
+      .select()
+      .single();
+
+    if (wktError) {
+      console.error('[/api/hotspots/create] Insertion failed:', wktError.message);
+      return NextResponse.json(
+        { error: 'Failed to save hotspot coordinates.' },
+        { status: 500 }
+      );
+    }
+    data = wktData;
   }
 
   return NextResponse.json({ hotspot: data });

@@ -996,25 +996,13 @@ export default function CameraPage() {
                         
                         {/* Platform Badges */}
                         <div className="absolute top-3 right-3 bg-black/60 px-2 py-1 rounded border border-zinc-800 flex items-center gap-1.5 backdrop-blur-sm">
-                          {post.platform === 'instagram' && (
-                            <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                              <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
-                              <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
-                              <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
-                            </svg>
-                          )}
-                          {post.platform === 'youtube_shorts' && (
-                            <svg className="w-3 h-3 text-red-500" viewBox="0 0 24 24" fill="currentColor">
-                              <path d="M23.498 6.163c-.272-1.016-1.074-1.819-2.09-2.09C19.57 3.61 12 3.61 12 3.61s-7.57 0-9.408.462c-1.016.271-1.819 1.074-2.09 2.09C0 8.002 0 12 0 12s0 3.998.462 5.837c.271 1.016 1.074 1.819 2.09 2.09C4.43 20.39 12 20.39 12 20.39s7.57 0 9.408-.462c1.016-.271 1.819-1.074 2.09-2.09.462-1.837.462-5.837.462-5.837s0-3.998-.462-5.837zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-                            </svg>
-                          )}
-                          {post.platform === 'tiktok' && (
-                            <svg className="w-3 h-3 text-cyan-400 fill-cyan-400" viewBox="0 0 24 24">
-                              <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                            </svg>
-                          )}
+                          <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+                            <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+                            <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+                          </svg>
                           <span className="text-[10px] font-mono uppercase text-zinc-300">
-                            {post.platform === 'youtube_shorts' ? 'Shorts' : post.platform}
+                            Instagram
                           </span>
                         </div>
 
