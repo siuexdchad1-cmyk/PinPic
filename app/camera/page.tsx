@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { throttle } from '@/lib/utils';
 import type { NearbyHotspot, CameraState, ProcessShotResponse, GpsCoordinates } from '@/lib/types';
 import type { SuggestedSpot } from '@/app/api/location/suggest/route';
-import type { LocationSearchResult } from '@/app/api/location/search/route';
+import type { LocationSearchResult, SocialPost } from '@/app/api/location/search/route';
 import PermissionsWizard from '@/components/camera/PermissionsWizard';
 
 // ── TensorFlow.js / PoseNet Keypoint Interface ────────────────────────────────
@@ -397,7 +397,9 @@ export default function CameraPage() {
   const [pinImageUrl, setPinImageUrl] = useState('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=75');
   const [pinLoading, setPinLoading] = useState(false);
 
-  const [suggestions, setSuggestions] = useState<SuggestedSpot[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_suggestions, setSuggestions] = useState<SuggestedSpot[]>([]);
+  const [socialPosts, setSocialPosts]     = useState<SocialPost[]>([]);
   const [placeName, setPlaceName]     = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
 
@@ -666,30 +668,18 @@ export default function CameraPage() {
         accuracy: 10,
       };
       setGps(virtualGps);
-      
+
       const briefName = data.displayName.split(',')[0];
       setPlaceName(briefName);
 
-      if (data.photos && data.photos.length > 0) {
-        const spotSuggestions: SuggestedSpot[] = data.photos.map((url, idx) => {
-          const platforms = ['Instagram', 'Snapchat', 'Flickr', 'Twitter'];
-          const platform = platforms[idx % platforms.length];
-          return {
-            name: `${briefName} capture`,
-            type: `${platform} Post`,
-            imageUrl: url,
-            lat: data.lat,
-            lng: data.lng,
-            distanceM: Math.round(Math.random() * 120 + 10)
-          };
-        });
-        setSuggestions(spotSuggestions);
+      if (data.posts && data.posts.length > 0) {
+        setSocialPosts(data.posts);
         setShowSuggestions(true);
-        setPinImageUrl(data.photos[0]);
-        drawStencil(data.photos[0]);
+        setPinImageUrl(data.posts[0].inspo_image_url);
+        drawStencil(data.posts[0].inspo_image_url);
       }
 
-      toast.success(`Teleported to ${briefName}! Inspiration photos loaded.`);
+      toast.success(`📍 ${briefName} — ${data.posts?.length ?? 0} trending shots loaded`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Search failed.';
       toast.error(msg);
@@ -1078,131 +1068,155 @@ export default function CameraPage() {
             </div>
           )}
 
-          {/* ── Community Inspiration Feed Tray ───────────────────────────── */}
-          {suggestions.length > 0 && (
-            <div className="absolute bottom-28 left-0 right-0 z-10 px-2 pointer-events-auto">
-              <div
-                style={{
-                  background: 'rgba(0,0,0,0.85)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  borderRadius: '14px',
-                  backdropFilter: 'blur(16px)',
-                }}
-              >
-                {/* Header row */}
-                <div className="flex items-center justify-between px-3.5 py-2">
-                  <div className="flex items-center gap-1.5">
-                    <span style={{ fontSize: '9px', letterSpacing: '0.12em', color: '#10b981', fontFamily: 'monospace' }}>
-                      ● COMMUNITY FEED
-                    </span>
-                    {placeName && (
-                      <span style={{ fontSize: '9px', color: '#71717a', fontFamily: 'monospace' }}>
-                        near {placeName}
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => setShowSuggestions(v => !v)}
-                    style={{ fontSize: '9px', color: '#52525b', fontFamily: 'monospace', background: 'none', border: 'none', cursor: 'pointer' }}
-                  >
-                    {showSuggestions ? '▾ COLLAPSE FEED' : '▸ EXPAND FEED'}
-                  </button>
+          {/* ── Social Inspiration Feed Tray ────────────────────────────────── */}
+          {socialPosts.length > 0 && (
+            <div className="absolute bottom-28 left-0 right-0 z-10 pointer-events-auto">
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-mono uppercase tracking-widest text-emerald-500">● Trending Near</span>
+                  {placeName && <span className="text-[9px] font-mono text-zinc-500">{placeName}</span>}
                 </div>
+                <button
+                  onClick={() => setShowSuggestions(v => !v)}
+                  className="text-[9px] font-mono text-zinc-600 hover:text-zinc-300 transition-colors"
+                >
+                  {showSuggestions ? 'HIDE' : 'SHOW'}
+                </button>
+              </div>
 
-                {/* Scrollable cards */}
-                {showSuggestions && (
-                  <div
-                    className="flex gap-3 overflow-x-auto pb-3 px-3.5"
-                    style={{ scrollbarWidth: 'none' }}
-                  >
-                    {suggestions.map((spot, i) => {
-                      const platforms = ['Instagram', 'Snapchat', 'Flickr', 'Twitter'];
-                      const platform = spot.type.includes('Post') ? spot.type.split(' ')[0] : platforms[i % platforms.length];
-                      const platformColors: Record<string, string> = {
-                        Instagram: '#e1306c',
-                        Snapchat: '#eab308',
-                        Flickr: '#0063db',
-                        Twitter: '#1da1f2'
-                      };
-                      const userNames = ['@lens_traveler', '@frame_master', '@viewfinder_pro', '@composition_guru', '@pic_nomad', '@travel_reels'];
-                      const userName = userNames[i % userNames.length];
-                      const initials = userName.substring(1, 3).toUpperCase();
+              {showSuggestions && (
+                <div
+                  className="flex gap-3 overflow-x-auto px-4 pb-1"
+                  style={{ scrollbarWidth: 'none' }}
+                >
+                  {socialPosts.map((post) => {
+                    // Platform brand config
+                    const brandCfg = {
+                      instagram: {
+                        label: 'Instagram',
+                        bg: 'linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)',
+                        dot: '#e1306c',
+                      },
+                      tiktok: {
+                        label: 'TikTok',
+                        bg: '#010101',
+                        dot: '#69c9d0',
+                      },
+                      youtube_shorts: {
+                        label: 'Shorts',
+                        bg: '#ff0000',
+                        dot: '#ff4444',
+                      },
+                    }[post.platform];
 
-                      return (
-                        <div
-                          key={i}
-                          style={{
-                            minWidth: '150px',
-                            maxWidth: '150px',
-                            borderRadius: '12px',
-                            overflow: 'hidden',
-                            border: '1px solid rgba(255,255,255,0.08)',
-                            background: '#09090b',
-                            flexShrink: 0,
-                            display: 'flex',
-                            flexDirection: 'column',
-                          }}
-                        >
-                          {/* Profile header */}
-                          <div style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                              <div style={{ width: '16px', height: '16px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7px', fontWeight: 'bold', color: '#a1a1aa' }}>
-                                {initials}
-                              </div>
-                              <span style={{ fontSize: '8px', color: '#e4e4e7', fontWeight: 600, fontFamily: 'monospace' }}>
-                                {userName}
-                              </span>
-                            </div>
-                            <span style={{ fontSize: '7px', fontWeight: 'bold', color: platformColors[platform] ?? '#a1a1aa', fontFamily: 'monospace', marginLeft: 'auto' }}>
-                              {platform.toUpperCase()}
-                            </span>
+                    const likesDisplay =
+                      post.likes_count >= 1_000_000
+                        ? `${(post.likes_count / 1_000_000).toFixed(1)}M`
+                        : post.likes_count >= 1_000
+                        ? `${(post.likes_count / 1_000).toFixed(0)}K`
+                        : `${post.likes_count}`;
+
+                    return (
+                      <div
+                        key={post.id}
+                        style={{
+                          minWidth: '158px',
+                          maxWidth: '158px',
+                          borderRadius: '14px',
+                          overflow: 'hidden',
+                          border: '1px solid rgba(255,255,255,0.07)',
+                          background: '#09090b',
+                          flexShrink: 0,
+                          display: 'flex',
+                          flexDirection: 'column',
+                        }}
+                      >
+                        {/* Full-bleed image with platform badge overlay */}
+                        <div style={{ position: 'relative', width: '100%', height: '100px' }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={post.inspo_image_url}
+                            alt={post.caption}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          />
+                          {/* Platform badge top-left */}
+                          <div
+                            style={{
+                              position: 'absolute', top: '6px', left: '6px',
+                              background: brandCfg.bg,
+                              borderRadius: '5px',
+                              padding: '2px 5px',
+                              fontSize: '7px',
+                              fontWeight: 700,
+                              color: '#ffffff',
+                              fontFamily: 'monospace',
+                              letterSpacing: '0.05em',
+                            }}
+                          >
+                            {brandCfg.label}
                           </div>
-
-                          {/* Image */}
-                          <div style={{ position: 'relative', width: '100%', height: '90px' }}>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={spot.imageUrl}
-                              alt={spot.name}
-                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                            />
-                          </div>
-
-                          {/* Action Info */}
-                          <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <p style={{ fontSize: '8px', color: '#a1a1aa', fontFamily: 'monospace', margin: 0, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                              📍 {spot.name}
-                            </p>
-                            <button
-                              onClick={() => {
-                                setPinImageUrl(spot.imageUrl);
-                                drawStencil(spot.imageUrl);
-                                setShowSuggestions(false);
-                                toast.success(`Composition set from ${userName}'s post`);
-                              }}
-                              style={{
-                                width: '100%',
-                                padding: '4px 0',
-                                background: 'rgba(255,255,255,0.08)',
-                                border: '1px solid rgba(255,255,255,0.12)',
-                                borderRadius: '6px',
-                                color: '#f4f4f5',
-                                fontSize: '8px',
-                                fontWeight: 600,
-                                fontFamily: 'monospace',
-                                cursor: 'pointer',
-                                textAlign: 'center',
-                              }}
-                            >
-                              USE COMPOSITION
-                            </button>
+                          {/* Like count badge top-right */}
+                          <div
+                            style={{
+                              position: 'absolute', top: '6px', right: '6px',
+                              background: 'rgba(0,0,0,0.7)',
+                              borderRadius: '5px',
+                              padding: '2px 5px',
+                              fontSize: '7px',
+                              fontWeight: 700,
+                              color: '#f4f4f5',
+                              fontFamily: 'monospace',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                            }}
+                          >
+                            <span style={{ color: brandCfg.dot }}>♥</span> {likesDisplay}
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+
+                        {/* Card bottom */}
+                        <div style={{ padding: '6px 8px 7px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {/* Handle */}
+                          <span style={{ fontSize: '8px', fontWeight: 700, color: '#e4e4e7', fontFamily: 'monospace' }}>
+                            {post.user_handle}
+                          </span>
+                          {/* Caption */}
+                          <p style={{ fontSize: '7px', color: '#71717a', fontFamily: 'monospace', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {post.caption}
+                          </p>
+                          {/* CTA */}
+                          <button
+                            onClick={() => {
+                              setPinImageUrl(post.inspo_image_url);
+                              drawStencil(post.inspo_image_url);
+                              setShowSuggestions(false);
+                              toast.success(`🎯 Composition loaded from ${post.user_handle}`);
+                            }}
+                            style={{
+                              width: '100%',
+                              marginTop: '2px',
+                              padding: '4px 0',
+                              background: '#ffffff',
+                              border: 'none',
+                              borderRadius: '6px',
+                              color: '#09090b',
+                              fontSize: '8px',
+                              fontWeight: 700,
+                              fontFamily: 'monospace',
+                              cursor: 'pointer',
+                              letterSpacing: '0.05em',
+                            }}
+                          >
+                            USE COMPOSITION
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
