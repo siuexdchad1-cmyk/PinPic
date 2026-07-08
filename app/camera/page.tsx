@@ -2,270 +2,40 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
-import { Loader2, AlertCircle, RefreshCw, Search, Sparkles } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { throttle } from '@/lib/utils';
-import type { NearbyHotspot, CameraState, ProcessShotResponse, GpsCoordinates } from '@/lib/types';
-import type { SuggestedSpot } from '@/app/api/location/suggest/route';
+import { Loader2, AlertCircle, RefreshCw, X, Sliders, LayoutGrid } from 'lucide-react';
+import type { CameraState, ProcessShotResponse, GpsCoordinates } from '@/lib/types';
 import type { LocationSearchResult, SocialPost } from '@/app/api/location/search/route';
 import PermissionsWizard from '@/components/camera/PermissionsWizard';
 
-// ── TensorFlow.js / PoseNet Keypoint Interface ────────────────────────────────
-interface Keypoint {
-  part: string;
-  position: { x: number; y: number };
-  score: number;
-}
-
-// ── TF.js and PoseNet Dynamic Loader ─────────────────────────────────────────
-function loadExternalScripts(urls: string[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    let loadedCount = 0;
-    const onLoad = () => {
-      loadedCount++;
-      if (loadedCount === urls.length) {
-        resolve();
-      }
-    };
-    const onError = () => {
-      reject(new Error('Failed to load TF.js / PoseNet scripts'));
-    };
-
-    urls.forEach((url) => {
-      if (document.querySelector(`script[src="${url}"]`)) {
-        onLoad();
-        return;
-      }
-      const script = document.createElement('script');
-      script.src = url;
-      script.async = true;
-      script.onload = onLoad;
-      script.onerror = onError;
-      document.body.appendChild(script);
-    });
-  });
-}
-
-// ── Pose Guide Templates & Skeleton Drawing Helpers ──────────────────────────
-interface Point {
-  x: number;
-  y: number;
-}
-interface PoseTemplate {
-  name: string;
-  description: string;
-  joints: {
-    head: Point;
-    neck: Point;
-    lShoulder: Point;
-    rShoulder: Point;
-    lElbow: Point;
-    rElbow: Point;
-    lWrist: Point;
-    rWrist: Point;
-    lHip: Point;
-    rHip: Point;
-    lKnee: Point;
-    rKnee: Point;
-    lAnkle: Point;
-    rAnkle: Point;
-  };
-}
-
-const POSE_TEMPLATES: Record<string, PoseTemplate> = {
-  'classic-stand': {
-    name: 'Model Stand',
-    description: 'Casual posture with hands resting on hips',
-    joints: {
-      head: { x: 0.5, y: 0.16 },
-      neck: { x: 0.5, y: 0.24 },
-      lShoulder: { x: 0.42, y: 0.26 },
-      rShoulder: { x: 0.58, y: 0.26 },
-      lElbow: { x: 0.36, y: 0.40 },
-      rElbow: { x: 0.64, y: 0.40 },
-      lWrist: { x: 0.42, y: 0.52 },
-      rWrist: { x: 0.58, y: 0.52 },
-      lHip: { x: 0.44, y: 0.54 },
-      rHip: { x: 0.56, y: 0.54 },
-      lKnee: { x: 0.45, y: 0.72 },
-      rKnee: { x: 0.55, y: 0.72 },
-      lAnkle: { x: 0.46, y: 0.88 },
-      rAnkle: { x: 0.54, y: 0.88 },
-    }
-  },
-  'cafe-sit': {
-    name: 'Cafe Sitting',
-    description: 'Relaxed sitting pose resting chin on hand',
-    joints: {
-      head: { x: 0.46, y: 0.22 },
-      neck: { x: 0.48, y: 0.30 },
-      lShoulder: { x: 0.36, y: 0.34 },
-      rShoulder: { x: 0.56, y: 0.34 },
-      lElbow: { x: 0.30, y: 0.52 },
-      rElbow: { x: 0.52, y: 0.48 },
-      lWrist: { x: 0.42, y: 0.32 },
-      rWrist: { x: 0.56, y: 0.62 },
-      lHip: { x: 0.40, y: 0.66 },
-      rHip: { x: 0.58, y: 0.66 },
-      lKnee: { x: 0.30, y: 0.80 },
-      rKnee: { x: 0.64, y: 0.82 },
-      lAnkle: { x: 0.32, y: 0.92 },
-      rAnkle: { x: 0.60, y: 0.92 },
-    }
-  },
-  'action-walk': {
-    name: 'Casual Stride',
-    description: 'Dynamic walking posture with active leg stride',
-    joints: {
-      head: { x: 0.50, y: 0.18 },
-      neck: { x: 0.50, y: 0.26 },
-      lShoulder: { x: 0.44, y: 0.28 },
-      rShoulder: { x: 0.56, y: 0.28 },
-      lElbow: { x: 0.40, y: 0.42 },
-      rElbow: { x: 0.60, y: 0.42 },
-      lWrist: { x: 0.44, y: 0.54 },
-      rWrist: { x: 0.62, y: 0.52 },
-      lHip: { x: 0.45, y: 0.56 },
-      rHip: { x: 0.55, y: 0.56 },
-      lKnee: { x: 0.38, y: 0.72 },
-      rKnee: { x: 0.62, y: 0.72 },
-      lAnkle: { x: 0.32, y: 0.88 },
-      rAnkle: { x: 0.66, y: 0.88 },
-    }
-  }
-};
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function drawTemplateSkeleton(ctx: CanvasRenderingContext2D, w: number, h: number, template: PoseTemplate) {
-  // Purged neon skeleton overlays
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function drawLiveSkeleton(ctx: CanvasRenderingContext2D, keypoints: Keypoint[]) {
-  // Purged neon live tracking guides
-}
-
-function calculatePoseScore(keypoints: Keypoint[], template: PoseTemplate): number {
-  const parts = ['head', 'lShoulder', 'rShoulder', 'lElbow', 'rElbow', 'lWrist', 'rWrist', 'lHip', 'rHip', 'lKnee', 'rKnee', 'lAnkle', 'rAnkle'];
-  const mapping: Record<string, string> = {
-    head: 'nose',
-    lShoulder: 'leftShoulder',
-    rShoulder: 'rightShoulder',
-    lElbow: 'leftElbow',
-    rElbow: 'rightElbow',
-    lWrist: 'leftWrist',
-    rWrist: 'rightWrist',
-    lHip: 'leftHip',
-    rHip: 'rightHip',
-    lKnee: 'leftKnee',
-    rKnee: 'rightKnee',
-    lAnkle: 'leftAnkle',
-    rAnkle: 'rightAnkle'
-  };
-
-  const validKps = keypoints.filter(k => k.score >= 0.4);
-  if (validKps.length < 5) return 0;
-
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  validKps.forEach(k => {
-    if (k.position.x < minX) minX = k.position.x;
-    if (k.position.x > maxX) maxX = k.position.x;
-    if (k.position.y < minY) minY = k.position.y;
-    if (k.position.y > maxY) maxY = k.position.y;
-  });
-
-  const width = maxX - minX || 1;
-  const height = maxY - minY || 1;
-
-  const templatePoints = Object.values(template.joints);
-  let tMinX = Infinity, tMaxX = -Infinity, tMinY = Infinity, tMaxY = -Infinity;
-  templatePoints.forEach(p => {
-    if (p.x < tMinX) tMinX = p.x;
-    if (p.x > tMaxX) tMaxX = p.x;
-    if (p.y < tMinY) tMinY = p.y;
-    if (p.y > tMaxY) tMaxY = p.y;
-  });
-  const tWidth = tMaxX - tMinX || 1;
-  const tHeight = tMaxY - tMinY || 1;
-
-  let totalDiff = 0;
-  let count = 0;
-
-  parts.forEach(part => {
-    const userKp = keypoints.find(k => k.part === mapping[part]);
-    if (userKp && userKp.score >= 0.4) {
-      const normUserX = (userKp.position.x - minX) / width;
-      const normUserY = (userKp.position.y - minY) / height;
-
-      const tPt = template.joints[part as keyof typeof template.joints];
-      const normTemplateX = (tPt.x - tMinX) / tWidth;
-      const normTemplateY = (tPt.y - tMinY) / tHeight;
-
-      const dist = Math.sqrt(
-        Math.pow(normUserX - normTemplateX, 2) +
-        Math.pow(normUserY - normTemplateY, 2)
-      );
-      totalDiff += dist;
-      count++;
-    }
-  });
-
-  if (count === 0) return 0;
-  const avgDiff = totalDiff / count;
-
-  return Math.max(0, Math.min(100, Math.round(100 - (avgDiff * 300))));
-}
-
-// Global variable to persist loaded PoseNet model across state renders
-let poseNetModel: unknown = null;
-
 export default function CameraPage() {
-  const videoRef    = useRef<HTMLVideoElement>(null);
-  const canvasRef   = useRef<HTMLCanvasElement>(null);
-  const streamRef   = useRef<MediaStream | null>(null);
-  const watchIdRef  = useRef<number | null>(null);
-  const stencilImgRef = useRef<HTMLImageElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const lastFetchTimeRef = useRef<number>(0);
 
-  const [camState,  setCamState]  = useState<CameraState>('idle');
-  const [gps,       setGps]       = useState<GpsCoordinates | null>(null);
-  const [hotspot,   setHotspot]   = useState<NearbyHotspot | null>(null);
-  const [result,    setResult]    = useState<ProcessShotResponse | null>(null);
-  const [errorMsg,  setErrorMsg]  = useState<string>('');
+  const [camState, setCamState] = useState<CameraState>('idle');
+  const [gps, setGps] = useState<GpsCoordinates | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string>('');
+  const [result, setResult] = useState<ProcessShotResponse | null>(null);
+  const [socialPosts, setSocialPosts] = useState<SocialPost[]>([]);
 
-  const [showPinModal, setShowPinModal] = useState(false);
-  const [pinTitle, setPinTitle] = useState('');
-  const [pinDescription, setPinDescription] = useState('');
-  const [pinImageUrl, setPinImageUrl] = useState('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=75');
-  const [pinLoading, setPinLoading] = useState(false);
+  // ── Reference Stencil & Side-by-Side Visuals ──────────────────────────────
+  const [selectedPost, setSelectedPost] = useState<SocialPost | null>(null);
+  const [overlayOpacity, setOverlayOpacity] = useState<number>(0.25);
+  const [isSideBySide, setIsSideBySide] = useState<boolean>(false);
+  const [showSuggestions, setShowSuggestions] = useState<boolean>(true);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [_suggestions, setSuggestions] = useState<SuggestedSpot[]>([]);
-  const [socialPosts, setSocialPosts]     = useState<SocialPost[]>([]);
-  const [placeName, setPlaceName]     = useState('');
-  const [showSuggestions, setShowSuggestions] = useState(false);
-
-  // ── Search & Pose states ──────────────────────────────────────────────────
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
-
-  const [poseGuideActive, setPoseGuideActive] = useState(false);
-  const [selectedPose, setSelectedPose]         = useState<string>('classic-stand');
-  const [isPoseNetLoading, setIsPoseNetLoading] = useState(false);
-  const [isPoseNetActive, setIsPoseNetActive]   = useState(false);
-  const [poseMatchScore, setPoseMatchScore]     = useState<number | null>(null);
-
-
-  // ── Draw wireframe stencil on canvas ──────────────────────────────────────
-  const drawStencil = useCallback((imageUrl: string | null) => {
+  // ── Draw stark white editorial alignment guides ───────────────────────────
+  const drawCompositionGuides = useCallback(() => {
     const canvas = canvasRef.current;
-    const video  = videoRef.current;
+    const video = videoRef.current;
     if (!canvas || !video) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    canvas.width  = video.videoWidth  || canvas.offsetWidth || 640;
+    canvas.width = video.videoWidth || canvas.offsetWidth || 640;
     canvas.height = video.videoHeight || canvas.offsetHeight || 480;
 
     const w = canvas.width;
@@ -273,122 +43,71 @@ export default function CameraPage() {
 
     ctx.clearRect(0, 0, w, h);
 
-    function drawCompositionGuides(c: CanvasRenderingContext2D) {
-      // Thin 1px white rule-of-thirds lines
-      c.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-      c.lineWidth   = 1;
-      [w / 3, (2 * w) / 3].forEach((x) => {
-        c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
-      });
-      [h / 3, (2 * h) / 3].forEach((y) => {
-        c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
-      });
+    // Rule of Thirds (1px solid white, very subtle)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 1;
+    [w / 3, (2 * w) / 3].forEach((x) => {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    });
+    [h / 3, (2 * h) / 3].forEach((y) => {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    });
 
-      // Center crosshair (15px each arm) in solid white
-      const cx = w / 2;
-      const cy = h / 2;
-      const arm = 15;
-      c.strokeStyle = '#ffffff';
-      c.lineWidth = 1;
-      c.beginPath();
-      c.moveTo(cx - arm, cy); c.lineTo(cx + arm, cy);
-      c.moveTo(cx, cy - arm); c.lineTo(cx, cy + arm);
-      c.stroke();
+    // Centered Crosshair (15px arms)
+    const cx = w / 2;
+    const cy = h / 2;
+    const arm = 15;
+    ctx.strokeStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(cx - arm, cy); ctx.lineTo(cx + arm, cy);
+    ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy + arm);
+    ctx.stroke();
 
-      // Leica corner crop marks
-      const pad = 12;
-      const len = 10;
-      c.strokeStyle = '#ffffff';
-      c.lineWidth = 1;
-      // Top-left
-      c.beginPath(); c.moveTo(pad, pad + len); c.lineTo(pad, pad); c.lineTo(pad + len, pad); c.stroke();
-      // Top-right
-      c.beginPath(); c.moveTo(w - pad - len, pad); c.lineTo(w - pad, pad); c.lineTo(w - pad, pad + len); c.stroke();
-      // Bottom-left
-      c.beginPath(); c.moveTo(pad, h - pad - len); c.lineTo(pad, h - pad); c.lineTo(pad + len, h - pad); c.stroke();
-      // Bottom-right
-      c.beginPath(); c.moveTo(w - pad - len, h - pad); c.lineTo(w - pad, h - pad); c.lineTo(w - pad, h - pad - len); c.stroke();
-    }
-
-    if (imageUrl) {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        stencilImgRef.current = img;
-        const c = ctx!;
-        c.globalAlpha = 0.12;
-        c.drawImage(img, 0, 0, w, h);
-        c.globalAlpha = 1;
-        drawCompositionGuides(c);
-      };
-      img.onerror = () => {
-        stencilImgRef.current = null;
-        drawCompositionGuides(ctx);
-      };
-      img.src = imageUrl;
-    } else {
-      stencilImgRef.current = null;
-      drawCompositionGuides(ctx);
-    }
+    // Leica Corner Crop Brackets
+    const pad = 12;
+    const len = 10;
+    ctx.strokeStyle = '#ffffff';
+    // Top-left
+    ctx.beginPath(); ctx.moveTo(pad, pad + len); ctx.lineTo(pad, pad); ctx.lineTo(pad + len, pad); ctx.stroke();
+    // Top-right
+    ctx.beginPath(); ctx.moveTo(w - pad - len, pad); ctx.lineTo(w - pad, pad); ctx.lineTo(w - pad, pad + len); ctx.stroke();
+    // Bottom-left
+    ctx.beginPath(); ctx.moveTo(pad, h - pad - len); ctx.lineTo(pad, h - pad); ctx.lineTo(pad + len, h - pad); ctx.stroke();
+    // Bottom-right
+    ctx.beginPath(); ctx.moveTo(w - pad - len, h - pad); ctx.lineTo(w - pad, h - pad); ctx.lineTo(w - pad, h - pad - len); ctx.stroke();
   }, []);
 
-  // ── Query nearby hotspots ──────────────────────────────────────────────────
-  const checkProximity = useCallback(
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    throttle(async (coords: GpsCoordinates) => {
-      // 1. Proximity check against Database hotspots (geofencing)
-      try {
-        const res = await fetch(
-          `/api/hotspots/nearby?lat=${coords.latitude}&lng=${coords.longitude}&radius=15`
-        );
-        if (res.ok) {
-          const json = await res.json();
-          const nearest: NearbyHotspot | undefined = json.hotspots?.[0];
-          if (nearest) {
-            setHotspot(nearest);
-            setCamState('hotspot-found');
-            setPinImageUrl(nearest.inspo_image_url);
-            drawStencil(nearest.inspo_image_url);
-            return;
-          }
+  // ── Redraw guides on window/canvas resize ────────────────────────────────
+  useEffect(() => {
+    if (camState === 'streaming' || camState === 'hotspot-found') {
+      const interval = setInterval(drawCompositionGuides, 500);
+      return () => clearInterval(interval);
+    }
+  }, [camState, drawCompositionGuides]);
+
+  // ── Fetch social posts near coordinates (throttled to 3s) ──────────────────
+  const fetchSocialPosts = useCallback(async (latitude: number, longitude: number) => {
+    const now = Date.now();
+    if (now - lastFetchTimeRef.current < 3000) return;
+    lastFetchTimeRef.current = now;
+
+    try {
+      const res = await fetch(`/api/location/search?lat=${latitude}&lng=${longitude}`);
+      if (!res.ok) return;
+      const data: LocationSearchResult = await res.json();
+      if (data && data.posts) {
+        setSocialPosts(data.posts);
+        if (!selectedPost && data.posts.length > 0) {
+          // Preload first post as composition stencil guide
+          setSelectedPost(data.posts[0]);
         }
-      } catch {
-        // Non-fatal database geofence check
       }
+    } catch {
+      // Non-fatal geolocation discovery stream update failures
+    }
+  }, [selectedPost]);
 
-      // 2. Fetch automated local social feed near active GPS coordinate (universal fallback)
-      try {
-        const res = await fetch(
-          `/api/location/search?lat=${coords.latitude}&lng=${coords.longitude}`
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (data.posts && data.posts.length > 0) {
-            setSocialPosts(data.posts);
-            if (data.placeName || data.displayName) {
-              setPlaceName(data.placeName || data.displayName);
-            }
-            setShowSuggestions(true);
-
-            // Automatically load the nearest/first social post as the composition stencil overlay
-            const firstPost = data.posts[0];
-            setPinImageUrl(firstPost.inspo_image_url);
-            drawStencil(firstPost.inspo_image_url);
-
-            if (firstPost.pose_preset_id) {
-              setSelectedPose(firstPost.pose_preset_id);
-              setPoseGuideActive(true);
-            }
-          }
-        }
-      } catch {
-        // Universal search check failure is non-fatal
-      }
-    }, 3000),
-    [drawStencil]
-  );
-
-  // ── Start camera stream ────────────────────────────────────────────────────
+  // ── Start browser camera video streaming ──────────────────────────────────
   async function startCamera() {
     setCamState('requesting-permissions');
     setErrorMsg('');
@@ -406,27 +125,6 @@ export default function CameraPage() {
         await videoRef.current.play();
       }
       setCamState('streaming');
-      drawStencil(null);
-
-      // Start GPS watch
-      if ('geolocation' in navigator) {
-        watchIdRef.current = navigator.geolocation.watchPosition(
-          (pos) => {
-            const coords: GpsCoordinates = {
-              latitude:  pos.coords.latitude,
-              longitude: pos.coords.longitude,
-              accuracy:  pos.coords.accuracy,
-            };
-            setGps(coords);
-            checkProximity(coords);
-          },
-          (err) => {
-            console.warn('[GPS]', err.message);
-            toast.error('GPS unavailable — hotspot detection disabled.');
-          },
-          { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
-        );
-      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Camera access denied.';
       setErrorMsg(msg);
@@ -434,339 +132,73 @@ export default function CameraPage() {
     }
   }
 
+  // ── Initialize camera with pre-selected coordinator parameters ─────────────
   async function startCameraWithCoords(coords: { latitude: number; longitude: number }) {
-    setCamState('requesting-permissions');
-    setErrorMsg('');
-    setResult(null);
+    await startCamera();
+    const initialGps: GpsCoordinates = {
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      accuracy: 10,
+    };
+    setGps(initialGps);
+    fetchSocialPosts(coords.latitude, coords.longitude);
+  }
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-      setCamState('streaming');
-      drawStencil(null);
-
-      const initGps: GpsCoordinates = {
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        accuracy: 10,
-      };
-      setGps(initGps);
-      checkProximity(initGps);
-      fetchSuggestions(coords.latitude, coords.longitude);
-
+  // ── Real-Time GPS auto-geolocation loop effect ─────────────────────────────
+  useEffect(() => {
+    if (camState === 'streaming' || camState === 'hotspot-found') {
       if ('geolocation' in navigator) {
         watchIdRef.current = navigator.geolocation.watchPosition(
           (pos) => {
-            const nextGps: GpsCoordinates = {
-              latitude:  pos.coords.latitude,
+            const coords: GpsCoordinates = {
+              latitude: pos.coords.latitude,
               longitude: pos.coords.longitude,
-              accuracy:  pos.coords.accuracy,
+              accuracy: pos.coords.accuracy,
             };
-            setGps(nextGps);
-            checkProximity(nextGps);
+            setGps(coords);
+            fetchSocialPosts(coords.latitude, coords.longitude);
           },
           (err) => {
-            console.warn('[GPS]', err.message);
-            toast.error('GPS update failed.');
+            console.warn('[GPS Watcher Failure]', err.message);
           },
-          { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+          { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
         );
       }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Camera access failed.';
-      setErrorMsg(msg);
-      setCamState('error');
     }
-  }
-
-  async function fetchSuggestions(lat: number, lng: number) {
-    try {
-      const res = await fetch(`/api/location/suggest?lat=${lat}&lng=${lng}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.placeName) setPlaceName(data.placeName);
-      if (data.spots?.length > 0) {
-        setSuggestions(data.spots);
-        setShowSuggestions(true);
-      }
-    } catch {
-      // Suggestions are non-fatal
-    }
-  }
-
-  // ── PoseNet Initializer ────────────────────────────────────────────────────
-  async function initPoseNet() {
-    if (poseNetModel) return poseNetModel;
-    setIsPoseNetLoading(true);
-    try {
-      await loadExternalScripts([
-        'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js',
-        'https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet@2.2.2/dist/posenet.min.js'
-      ]);
-
-      const tf = (window as Window & { tf?: unknown }).tf;
-      const posenet = (window as Window & { posenet?: { load: (cfg: unknown) => Promise<unknown> } }).posenet;
-
-      if (tf && posenet) {
-        poseNetModel = await posenet.load({
-          architecture: 'MobileNetV1',
-          outputStride: 16,
-          inputResolution: { width: 257, height: 200 },
-          multiplier: 0.5
-        });
-        setIsPoseNetActive(true);
-        return poseNetModel;
-      } else {
-        throw new Error('TensorFlow / PoseNet failed to mount on window.');
-      }
-    } catch (err) {
-      console.error('[PoseNet Load Error]', err);
-      toast.error('Failed to start Live Pose Tracker.');
-    } finally {
-      setIsPoseNetLoading(false);
-    }
-  }
-
-  // ── Worldwide Geocoding Search Handler ──────────────────────────────────────
-  async function handleSearchLocation(e: React.FormEvent) {
-    e.preventDefault();
-    if (!searchQuery.trim()) return;
-
-    setIsSearching(true);
-    try {
-      const res = await fetch(`/api/location/search?q=${encodeURIComponent(searchQuery)}`);
-      if (!res.ok) {
-        throw new Error('Location not found. Try searching another landmark.');
-      }
-      const data: LocationSearchResult = await res.json();
-
-      const virtualGps: GpsCoordinates = {
-        latitude: data.lat,
-        longitude: data.lng,
-        accuracy: 10,
-      };
-      setGps(virtualGps);
-
-      const briefName = data.displayName.split(',')[0];
-      setPlaceName(briefName);
-
-      if (data.posts && data.posts.length > 0) {
-        setSocialPosts(data.posts);
-        setShowSuggestions(true);
-        setPinImageUrl(data.posts[0].inspo_image_url);
-        drawStencil(data.posts[0].inspo_image_url);
-      }
-
-      toast.success(`📍 ${briefName} — ${data.posts?.length ?? 0} trending shots loaded`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Search failed.';
-      toast.error(msg);
-    } finally {
-      setIsSearching(false);
-    }
-  }
-
-  // ── Live Pose Guide and Skeleton Overlay Animation Loop ────────────────────
-  useEffect(() => {
-    let active = true;
-    let animId: number;
-
-    const runEstimation = async () => {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      if (!video || !canvas || !active || !poseGuideActive) return;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      canvas.width = video.videoWidth || canvas.offsetWidth || 640;
-      canvas.height = video.videoHeight || canvas.offsetHeight || 480;
-      const w = canvas.width;
-      const h = canvas.height;
-
-      ctx.clearRect(0, 0, w, h);
-
-      // Draw stencil overlay if loaded
-      if (stencilImgRef.current) {
-        ctx.globalAlpha = 0.12;
-        ctx.drawImage(stencilImgRef.current, 0, 0, w, h);
-        ctx.globalAlpha = 1.0;
-      }
-
-      // Redraw rule-of-thirds grid
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-      ctx.lineWidth = 1;
-      [w / 3, (2 * w) / 3].forEach((x) => {
-        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-      });
-      [h / 3, (2 * h) / 3].forEach((y) => {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-      });
-
-      // Elegant centered rule crosshair matrix
-      const cx = w / 2;
-      const cy = h / 2;
-      const arm = 15;
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(cx - arm, cy); ctx.lineTo(cx + arm, cy);
-      ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy + arm);
-      ctx.stroke();
-
-      // Leica-style corner crop marks
-      const pad = 12;
-      const len = 10;
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1;
-      // Top-left
-      ctx.beginPath(); ctx.moveTo(pad, pad + len); ctx.lineTo(pad, pad); ctx.lineTo(pad + len, pad); ctx.stroke();
-      // Top-right
-      ctx.beginPath(); ctx.moveTo(w - pad - len, pad); ctx.lineTo(w - pad, pad); ctx.lineTo(w - pad, pad + len); ctx.stroke();
-      // Bottom-left
-      ctx.beginPath(); ctx.moveTo(pad, h - pad - len); ctx.lineTo(pad, h - pad); ctx.lineTo(pad + len, h - pad); ctx.stroke();
-      // Bottom-right
-      ctx.beginPath(); ctx.moveTo(w - pad - len, h - pad); ctx.lineTo(w - pad, h - pad); ctx.lineTo(w - pad, h - pad - len); ctx.stroke();
-
-      // Draw the silhouette template skeleton
-      const template = POSE_TEMPLATES[selectedPose];
-      if (template) {
-        drawTemplateSkeleton(ctx, w, h, template);
-      }
-
-      // Estimate live user posture
-      if (poseNetModel && isPoseNetActive) {
-        try {
-          const pose = await (poseNetModel as {
-            estimateSinglePose: (img: HTMLVideoElement, config: Record<string, unknown>) => Promise<{ keypoints: Keypoint[] }>
-          }).estimateSinglePose(video, {
-            flipHorizontal: false
-          });
-
-          if (pose && pose.keypoints) {
-            drawLiveSkeleton(ctx, pose.keypoints);
-            const score = calculatePoseScore(pose.keypoints, template);
-            setPoseMatchScore(score);
-          }
-        } catch {
-          // loop exceptions are non-fatal
-        }
-      }
-
-      if (active) {
-        animId = requestAnimationFrame(runEstimation);
-      }
-    };
-
-    if (poseGuideActive) {
-      if (!poseNetModel) {
-        initPoseNet().then(() => {
-          runEstimation();
-        });
-      } else {
-        runEstimation();
-      }
-    } else {
-      // Clear canvas overlay when pose guide is closed
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const ctx = canvas.getContext('2d');
-        ctx?.clearRect(0, 0, canvas.width, canvas.height);
-      }
-      setPoseMatchScore(null);
-    }
-
     return () => {
-      active = false;
-      cancelAnimationFrame(animId);
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
     };
-  }, [poseGuideActive, selectedPose, isPoseNetActive]);
+  }, [camState, fetchSocialPosts]);
 
-
-  async function handlePinHotspot(e: React.FormEvent) {
-    e.preventDefault();
-    if (!gps) {
-      toast.error('GPS coordinates not resolved yet. Wait for a location lock.');
-      return;
-    }
-    if (!pinTitle.trim()) {
-      toast.error('Title is required.');
-      return;
-    }
-    if (!pinImageUrl.trim()) {
-      toast.error('Reference image URL is required.');
-      return;
-    }
-
-    setPinLoading(true);
-    try {
-      const res = await fetch('/api/hotspots/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: pinTitle,
-          description: pinDescription,
-          inspoImageUrl: pinImageUrl,
-          lat: gps.latitude,
-          lng: gps.longitude,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Failed to create hotspot.');
-      const data = await res.json();
-      
-      const newHotspot = data.hotspot as NearbyHotspot;
-      setHotspot(newHotspot);
-      setCamState('hotspot-found');
-      drawStencil(newHotspot.inspo_image_url);
-      
-      toast.success(`Hotspot "${newHotspot.title}" pinned successfully!`);
-      setShowPinModal(false);
-      
-      // Reset form fields
-      setPinTitle('');
-      setPinDescription('');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Error pinning hotspot.');
-    } finally {
-      setPinLoading(false);
-    }
-  }
-
-  // ── Capture frame ──────────────────────────────────────────────────────────
+  // ── Capture viewfinder photo frame ─────────────────────────────────────────
   async function captureFrame() {
     if (!videoRef.current) return;
     setCamState('capturing');
 
     const snapCanvas = document.createElement('canvas');
-    snapCanvas.width  = videoRef.current.videoWidth;
-    snapCanvas.height = videoRef.current.videoHeight;
+    snapCanvas.width = videoRef.current.videoWidth || 1280;
+    snapCanvas.height = videoRef.current.videoHeight || 720;
     const ctx = snapCanvas.getContext('2d')!;
     ctx.drawImage(videoRef.current, 0, 0);
-    const imageBase64 = snapCanvas.toDataURL('image/jpeg', 0.75);
+    const imageBase64 = snapCanvas.toDataURL('image/jpeg', 0.85);
 
     setCamState('processing');
 
     try {
       const res = await fetch('/api/process-shot', {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageBase64,
-          hotspotImageUrl: hotspot?.inspo_image_url ?? null,
-          hotspotId:       hotspot?.id ?? null,
+          hotspotImageUrl: selectedPost?.inspo_image_url ?? null,
+          hotspotId: selectedPost?.id ?? null,
         }),
       });
 
-      if (!res.ok) throw new Error('Processing failed.');
+      if (!res.ok) throw new Error('AI analysis processing failed.');
       const data: ProcessShotResponse = await res.json();
       setResult(data);
       setCamState('result');
@@ -777,50 +209,10 @@ export default function CameraPage() {
     }
   }
 
-  // ── Load hotspot preset from query param ────────────────────────────────────
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    const refId = params.get('ref');
-    if (refId) {
-      fetch('/api/hotspots')
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (data && data.hotspots) {
-            const found = (data.hotspots as {
-              id: string;
-              title: string;
-              description: string | null;
-              inspo_image_url: string;
-              lat: number;
-              lng: number;
-            }[]).find((h) => h.id === refId);
-            if (found) {
-              setHotspot({
-                id: found.id,
-                title: found.title,
-                description: found.description,
-                inspo_image_url: found.inspo_image_url,
-                location: `POINT(${found.lng} ${found.lat})`,
-                license_source: 'Unsplash-Open-Asset',
-                created_at: new Date().toISOString(),
-                distance_m: 0,
-              });
-              setCamState('hotspot-found');
-              setPinImageUrl(found.inspo_image_url);
-              drawStencil(found.inspo_image_url);
-              toast.success(`Reference photo set: ${found.title}`);
-            }
-          }
-        })
-        .catch((err) => console.error('Error fetching ref hotspot:', err));
-    }
-  }, [drawStencil]);
-
-  // ── Cleanup on unmount ─────────────────────────────────────────────────────
+  // ── Cleanup camera streams on route transition unmount ─────────────────────
   useEffect(() => {
     return () => {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current?.getTracks().forEach((track) => track.stop());
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
       }
@@ -830,27 +222,191 @@ export default function CameraPage() {
   const isStreaming = ['streaming', 'hotspot-found', 'capturing', 'processing'].includes(camState);
 
   return (
-    <div className="camera-viewport flex flex-col">
-      {/* ── Video ──────────────────────────────────────────────────────── */}
-      <video
-        ref={videoRef}
-        className="camera-video"
-        playsInline
-        muted
-        autoPlay
-        style={{ display: isStreaming ? 'block' : 'none' }}
-        aria-label="Camera feed"
-      />
+    <div className="camera-viewport flex flex-col bg-black min-h-screen text-white select-none">
+      {/* ── Visualizer Layout ─────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col relative overflow-hidden bg-black">
+        <div className={`flex-1 flex ${isSideBySide ? 'flex-row' : 'flex-col'} items-center justify-center relative`}>
+          
+          {/* Viewfinder Column */}
+          <div className="flex-1 h-full w-full relative flex items-center justify-center bg-black">
+            <video
+              ref={videoRef}
+              className="absolute inset-0 w-full h-full object-cover"
+              playsInline
+              muted
+              autoPlay
+              style={{ display: isStreaming ? 'block' : 'none' }}
+              aria-label="Camera feed"
+            />
 
-      {/* ── Canvas Overlay ─────────────────────────────────────────────── */}
-      <canvas
-        ref={canvasRef}
-        className="camera-canvas"
-        style={{ display: isStreaming ? 'block' : 'none' }}
-        aria-hidden="true"
-      />
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 w-full h-full pointer-events-none z-10"
+              style={{ display: isStreaming ? 'block' : 'none' }}
+              aria-hidden="true"
+            />
 
-      {/* ── Permissions Onboarding Wizard ────────────────────────────────── */}
+            {/* Translucent overlay composition guide reference (Full-Screen overlay) */}
+            {isStreaming && selectedPost && !isSideBySide && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={selectedPost.inspo_image_url}
+                alt="Composition guide reference overlay"
+                className="absolute inset-0 w-full h-full object-cover pointer-events-none transition-opacity duration-100 z-10"
+                style={{ opacity: overlayOpacity }}
+              />
+            )}
+          </div>
+
+          {/* Side-by-Side Reference Panel */}
+          {isStreaming && selectedPost && isSideBySide && (
+            <div className="flex-1 h-full w-full border-l border-zinc-900 bg-black relative flex items-center justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={selectedPost.inspo_image_url}
+                alt="Composition reference side-by-side"
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute bottom-4 left-4 right-4 bg-black/85 border border-zinc-900 p-3 flex flex-col gap-0.5">
+                <span className="text-[10px] font-mono text-zinc-400">{selectedPost.user_handle}</span>
+                <p className="text-xs text-white line-clamp-2">{selectedPost.caption}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Control Center (Translucent Overlay Opacity & Layout Toggles) ───── */}
+        {isStreaming && selectedPost && (
+          <div className="absolute top-4 left-4 right-4 z-20 flex justify-between items-center gap-4 pointer-events-auto">
+            {/* Opacity slider for full screen overlay mode */}
+            {!isSideBySide ? (
+              <div className="flex items-center gap-3 bg-black border border-zinc-900 px-3 py-1.5 rounded-none w-52">
+                <Sliders className="h-3 w-3 text-zinc-500 shrink-0" />
+                <input
+                  type="range"
+                  min="0.0"
+                  max="1.0"
+                  step="0.05"
+                  value={overlayOpacity}
+                  onChange={(e) => setOverlayOpacity(parseFloat(e.target.value))}
+                  className="w-full h-1 bg-zinc-800 rounded-none appearance-none cursor-pointer accent-white"
+                  title="Reference opacity"
+                />
+                <span className="text-[10px] font-mono text-zinc-400 shrink-0 w-8 text-right">
+                  {Math.round(overlayOpacity * 100)}%
+                </span>
+              </div>
+            ) : (
+              <div />
+            )}
+
+            {/* Display Mode Selector */}
+            <div className="flex gap-1">
+              <button
+                onClick={() => setIsSideBySide((v) => !v)}
+                className="bg-black border border-zinc-900 hover:bg-zinc-900 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider flex items-center gap-1.5"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                {isSideBySide ? 'Overlay Mode' : 'Side-by-Side'}
+              </button>
+              <button
+                onClick={() => setSelectedPost(null)}
+                className="bg-black border border-zinc-900 hover:bg-zinc-900 p-1.5"
+                title="Clear inspiration"
+              >
+                <X className="h-3.5 w-3.5 text-zinc-400" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* GPS coordinates & accuracy diagnostics */}
+        {isStreaming && gps && (
+          <div className="absolute bottom-36 left-4 pointer-events-none text-[9px] font-mono text-zinc-500 z-10 flex flex-col gap-0.5">
+            <span>GPS: {gps.latitude.toFixed(5)}, {gps.longitude.toFixed(5)}</span>
+            <span>ACC: ±{Math.round(gps.accuracy)}m</span>
+          </div>
+        )}
+
+        {/* ── Active Live Geolocation Stream Tray ───────────────────────────── */}
+        {isStreaming && socialPosts.length > 0 && (
+          <div className="absolute bottom-28 left-0 right-0 z-10 pointer-events-auto bg-black/90 border-t border-zinc-900 py-3">
+            <div className="flex items-center justify-between px-4 mb-2">
+              <span className="text-[9px] font-mono uppercase tracking-widest text-white">
+                ● Live Local Social Stream
+              </span>
+              <button
+                onClick={() => setShowSuggestions((v) => !v)}
+                className="text-[9px] font-mono text-zinc-500 hover:text-zinc-300 uppercase"
+              >
+                {showSuggestions ? 'Collapse' : 'Expand'}
+              </button>
+            </div>
+
+            {showSuggestions && (
+              <div
+                className="flex gap-3 overflow-x-auto px-4 pb-1"
+                style={{ scrollbarWidth: 'none' }}
+              >
+                {socialPosts.map((post) => {
+                  const isSelected = selectedPost?.id === post.id;
+                  return (
+                    <div
+                      key={post.id}
+                      onClick={() => setSelectedPost(post)}
+                      className={`w-[170px] shrink-0 border cursor-pointer bg-black rounded-none overflow-hidden relative group transition-all duration-150
+                        ${isSelected ? 'border-white' : 'border-zinc-900 hover:border-zinc-700'}`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={post.inspo_image_url}
+                        alt={post.caption}
+                        className="w-full aspect-[3/4] object-cover opacity-80"
+                      />
+
+                      {/* Platform Badges */}
+                      <div className="absolute top-2 right-2 bg-black px-1.5 py-0.5 border border-zinc-900 text-[8px] font-mono uppercase text-zinc-400">
+                        {post.platform}
+                      </div>
+
+                      {/* Card Info */}
+                      <div className="p-2 bg-black border-t border-zinc-900 flex flex-col gap-0.5">
+                        <span className="text-[9px] font-mono text-white truncate">{post.user_handle}</span>
+                        <span className="text-[8px] text-zinc-500 font-mono">
+                          {post.likes_count.toLocaleString()} engagement
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Photo Capture Action ─────────────────────────────────────────── */}
+        {isStreaming && (
+          <div className="absolute bottom-8 left-0 right-0 flex justify-center z-10 pointer-events-auto">
+            {camState === 'processing' ? (
+              <div className="flex items-center gap-2 text-xs font-mono text-white bg-black border border-zinc-900 px-4 py-2">
+                <Loader2 className="h-4 w-4 animate-spin text-white" />
+                ANALYZING COMPOSITION...
+              </div>
+            ) : (
+              <button
+                onClick={captureFrame}
+                disabled={['capturing', 'processing'].includes(camState)}
+                className="h-16 w-16 rounded-full border-4 border-white flex items-center justify-center transition-all duration-150 active:scale-[0.95] bg-black/60 hover:bg-black"
+                title="Capture photo frame"
+              >
+                <div className="h-10 w-10 rounded-full bg-white" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Permissions onboarding wizard ─────────────────────────────────── */}
       {camState === 'idle' && (
         <PermissionsWizard
           onComplete={(coords) => startCameraWithCoords(coords)}
@@ -858,263 +414,48 @@ export default function CameraPage() {
         />
       )}
 
-      {/* ── Requesting permissions ─────────────────────────────────────── */}
+      {/* ── Requesting hardware permissions ───────────────────────────────── */}
       {camState === 'requesting-permissions' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
-          <p className="text-sm text-zinc-400">Requesting camera & GPS…</p>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-black">
+          <Loader2 className="h-8 w-8 animate-spin text-white" />
+          <p className="text-xs font-mono uppercase tracking-widest text-zinc-400">Initializing Viewport...</p>
         </div>
       )}
 
-      {/* ── Error ──────────────────────────────────────────────────────── */}
+      {/* ── Camera initialization error boundary ──────────────────────────── */}
       {camState === 'error' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-          <AlertCircle className="h-8 w-8 text-red-400" />
-          <p className="text-sm text-red-400">{errorMsg}</p>
-          <Button variant="outline" onClick={() => { setCamState('idle'); setErrorMsg(''); }}>
-            <RefreshCw className="h-4 w-4" /> Try again
-          </Button>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center bg-black">
+          <AlertCircle className="h-8 w-8 text-red-500" />
+          <p className="text-sm font-mono text-red-500 uppercase">{errorMsg}</p>
+          <button
+            onClick={() => { setCamState('idle'); setErrorMsg(''); }}
+            className="flex items-center gap-2 border border-zinc-900 hover:border-zinc-800 bg-black text-xs font-mono uppercase px-4 py-2.5"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Re-initialize
+          </button>
         </div>
       )}
 
-      {/* ── HUD Overlays (on top of video) ─────────────────────────────── */}
-      {isStreaming && (
-        <>
-
-          {/* Top Search Bar & Controls */}
-          <div className="absolute top-4 left-4 right-4 z-20 flex flex-col gap-2 pointer-events-auto">
-            <form onSubmit={handleSearchLocation} className="w-full flex gap-1.5">
-              <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
-                <input
-                  type="text"
-                  placeholder="Search location worldwide..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full h-9 pl-9 pr-4 bg-zinc-950/90 border border-zinc-800 rounded text-xs font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={isSearching}
-                className="px-3 bg-zinc-950 border border-zinc-800 hover:bg-zinc-900 text-xs font-mono rounded text-zinc-300 hover:text-white"
-              >
-                {isSearching ? '...' : 'Search'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setPoseGuideActive(v => !v)}
-                className={`p-2 border rounded transition-colors ${poseGuideActive ? 'bg-purple-600 border-purple-500 text-white' : 'bg-zinc-950/90 border-zinc-800 text-zinc-400 hover:text-white'}`}
-                title="Toggle Pose Guide"
-              >
-                <Sparkles className="h-4 w-4" />
-              </button>
-            </form>
-
-            {/* Context status pills */}
-            <div className="flex justify-between items-center px-1">
-              <div className="flex items-center gap-1.5">
-                {camState === 'hotspot-found' && hotspot ? (
-                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-900/50 px-2.5 py-0.5 rounded">
-                    ● HOTSPOT: {hotspot.title}
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-mono text-zinc-500 bg-zinc-950/70 border border-zinc-800/80 px-2.5 py-0.5 rounded">
-                    ● COMPOSER ACTIVE
-                  </span>
-                )}
-                {placeName && (
-                  <span className="text-[9px] font-mono text-zinc-400 max-w-[120px] truncate">
-                    @{placeName}
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => {
-                  if (!gps) {
-                    toast.error('GPS coordinates not resolved yet.');
-                    return;
-                  }
-                  setShowPinModal(true);
-                }}
-                className="text-[9px] font-mono border border-zinc-850 bg-zinc-950/90 text-zinc-400 px-2 py-0.5 rounded hover:text-white hover:border-zinc-700 transition-colors"
-              >
-                PIN CURRENT
-              </button>
-            </div>
-          </div>
-
-          {/* Floating Pose Selection HUD */}
-          {poseGuideActive && (
-            <div className="absolute top-24 right-4 z-20 flex flex-col gap-2 items-end pointer-events-auto">
-              <div className="bg-zinc-950/95 border border-zinc-800 rounded p-2 flex flex-col gap-1 text-[10px] font-mono text-zinc-400 w-32 shadow-xl">
-                <span className="text-zinc-500 text-[8px] uppercase tracking-wide">Pose Preset</span>
-                {Object.entries(POSE_TEMPLATES).map(([key, t]) => (
-                  <button
-                    key={key}
-                    onClick={() => setSelectedPose(key)}
-                    className={`px-1.5 py-0.5 rounded text-left transition-colors truncate ${selectedPose === key ? 'bg-purple-600 text-white' : 'hover:bg-zinc-900'}`}
-                  >
-                    {t.name}
-                  </button>
-                ))}
-              </div>
-              {isPoseNetLoading && (
-                <div className="bg-zinc-950/90 border border-zinc-800 rounded px-2 py-1 text-[10px] font-mono text-zinc-400 flex items-center gap-1.5">
-                  <Loader2 className="h-3 w-3 animate-spin text-purple-500" />
-                  Loading AI Pose...
-                </div>
-              )}
-              {poseMatchScore !== null && (
-                <div className="bg-zinc-950/90 border border-zinc-800 rounded px-2.5 py-1 flex items-center gap-1.5 font-mono text-xs shadow-xl">
-                  <span className="text-zinc-500">Pose Match:</span>
-                  <span className={poseMatchScore >= 75 ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
-                    {poseMatchScore}%
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* GPS accuracy bottom-left */}
-          {gps && (
-            <div
-              className="absolute bottom-24 left-4 pointer-events-none text-xs font-mono z-10"
-              style={{ color: '#71717a' }}
-            >
-              ±{Math.round(gps.accuracy)}m
-            </div>
-          )}
-
-          {/* ── Social Inspiration Feed Tray ────────────────────────────────── */}
-          {socialPosts.length > 0 && (
-            <div className="absolute bottom-28 left-0 right-0 z-10 pointer-events-auto">
-              {/* Header */}
-              <div className="flex items-center justify-between px-4 mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[9px] font-mono uppercase tracking-widest text-emerald-500">● Trending Near</span>
-                  {placeName && <span className="text-[9px] font-mono text-zinc-500">{placeName}</span>}
-                </div>
-                <button
-                  onClick={() => setShowSuggestions(v => !v)}
-                  className="text-[9px] font-mono text-zinc-600 hover:text-zinc-300 transition-colors"
-                >
-                  {showSuggestions ? 'HIDE' : 'SHOW'}
-                </button>
-              </div>
-
-              {showSuggestions && (
-                <div
-                  className="flex gap-3 overflow-x-auto px-4 pb-1"
-                  style={{ scrollbarWidth: 'none' }}
-                >
-                  {socialPosts.map((post) => {
-                    return (
-                      <div
-                        key={post.id}
-                        className="w-[180px] shrink-0 border border-zinc-900 bg-black rounded-none overflow-hidden relative group"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={post.inspo_image_url}
-                          alt={post.caption}
-                          className="w-full aspect-[3/4] object-cover opacity-80"
-                        />
-                        
-                        {/* Platform Badges */}
-                        <div className="absolute top-3 right-3 bg-black px-2 py-1 border border-zinc-900 flex items-center gap-1.5">
-                          <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
-                            <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
-                            <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
-                          </svg>
-                          <span className="text-[10px] font-mono uppercase text-zinc-300">
-                            Instagram
-                          </span>
-                        </div>
-
-                        {/* User Information */}
-                        <div className="absolute bottom-0 inset-x-0 p-3 bg-black border-t border-zinc-900 flex flex-col gap-0.5">
-                          <p className="text-[10px] font-mono text-white truncate">{post.user_handle}</p>
-                          <p className="text-[9px] text-zinc-500 font-mono">
-                            {post.likes_count.toLocaleString()} engagement tokens
-                          </p>
-                          
-                          <button
-                            onClick={() => {
-                              setPinImageUrl(post.inspo_image_url);
-                              drawStencil(post.inspo_image_url);
-                              setShowSuggestions(false);
-                              if (post.pose_preset_id) {
-                                setSelectedPose(post.pose_preset_id);
-                                setPoseGuideActive(true);
-                              }
-                              toast.success(`🎯 Guide and Pose loaded: ${post.user_handle}`);
-                            }}
-                            className="w-full mt-2.5 h-8 bg-white hover:bg-zinc-200 text-black font-mono font-medium text-[9px] rounded-none uppercase tracking-wider active:scale-[0.98] transition-all"
-                          >
-                            Use Composition
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-
-          {/* Capture / Processing button */}
-
-          <div className="absolute bottom-10 left-0 right-0 flex justify-center z-10">
-            {camState === 'processing' ? (
-              <div className="flex items-center gap-2 text-sm text-white">
-                <Loader2 className="h-5 w-5 animate-spin text-emerald-500" />
-                Analysing with AI…
-              </div>
-            ) : (
-              <button
-                onClick={captureFrame}
-                disabled={['capturing', 'processing'].includes(camState)}
-                id="capture-btn"
-                aria-label="Capture photo"
-                className={`h-16 w-16 rounded-full border-4 border-white flex items-center justify-center transition-all duration-150 active:scale-[0.95]
-                  ${camState === 'hotspot-found' ? 'capture-btn-pulse' : ''}`}
-                style={{ background: 'rgba(0,0,0,0.5)' }}
-              >
-                <div
-                  className="h-10 w-10 rounded-full transition-colors duration-150"
-                  style={{ background: camState === 'hotspot-found' ? '#10b981' : '#ffffff' }}
-                />
-              </button>
-            )}
-          </div>
-        </>
-      )}
-
-      {/* ── Result Overlay ─────────────────────────────────────────────── */}
+      {/* ── AI Vision Analysis results ────────────────────────────────────── */}
       {camState === 'result' && result && (
-        <div className="absolute inset-0 flex flex-col justify-end z-20" style={{ background: 'rgba(0,0,0,0.85)' }}>
-          <div className="p-6 flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
-            {/* Score */}
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold">Shot Analysed</h2>
-              <Badge
-                variant={result.matchAccuracy >= 95 ? 'perfect' : result.matchAccuracy >= 70 ? 'good' : 'low'}
-              >
-                {result.matchAccuracy}% match
-              </Badge>
+        <div className="absolute inset-0 flex flex-col justify-end z-30 bg-black/95">
+          <div className="p-8 flex flex-col gap-6 max-h-[85vh] overflow-y-auto border-t border-zinc-900 bg-black w-full max-w-md mx-auto">
+            
+            <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
+              <h2 className="text-sm font-mono uppercase tracking-wider text-white">AI Vision scored</h2>
+              <span className="text-sm font-mono font-bold text-white px-2 py-0.5 border border-zinc-900">
+                {result.matchAccuracy}% MATCH
+              </span>
             </div>
 
-            {/* Adjustments */}
+            {/* composition adjustments suggestions */}
             {result.adjustments.length > 0 && (
-              <div className="border border-zinc-800 rounded-md p-3">
-                <p className="text-xs text-zinc-500 mb-2 uppercase tracking-wide">Adjustments</p>
-                <ul className="flex flex-col gap-1.5">
+              <div className="border border-zinc-900 p-4">
+                <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest mb-2">Adjustments</p>
+                <ul className="flex flex-col gap-2 font-mono text-xs text-zinc-300">
                   {result.adjustments.map((adj, i) => (
-                    <li key={i} className="text-sm text-white flex gap-2">
-                      <span className="text-amber-400 shrink-0">→</span>
+                    <li key={i} className="flex gap-2">
+                      <span className="text-zinc-500">•</span>
                       {adj}
                     </li>
                   ))}
@@ -1122,105 +463,38 @@ export default function CameraPage() {
               </div>
             )}
 
-            {/* Caption */}
-            <div className="border border-zinc-800 rounded-md p-3">
-              <p className="text-xs text-zinc-500 mb-2 uppercase tracking-wide">AI Caption</p>
-              <p className="text-sm text-white leading-relaxed">{result.caption}</p>
+            {/* Generated captions */}
+            <div className="border border-zinc-900 p-4">
+              <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest mb-2">Generated Caption</p>
+              <p className="text-xs font-mono leading-relaxed text-zinc-300">{result.caption}</p>
             </div>
 
-            {/* Tags */}
+            {/* Semantic tags */}
             <div className="flex flex-wrap gap-1.5">
               {result.tags.map((tag) => (
-                <span key={tag} className="text-xs text-emerald-400 font-mono">#{tag}</span>
+                <span key={tag} className="text-[10px] font-mono border border-zinc-900 px-2 py-0.5 text-zinc-400">
+                  #{tag}
+                </span>
               ))}
             </div>
 
-            {/* Actions */}
+            {/* Return controls */}
             <div className="flex gap-3 pt-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => { setResult(null); setCamState('hotspot-found'); }}
+              <button
+                onClick={() => { setResult(null); setCamState('streaming'); }}
+                className="flex-1 border border-zinc-900 hover:border-zinc-800 text-zinc-400 hover:text-white py-3 text-xs font-mono uppercase tracking-wider"
               >
                 Retake
-              </Button>
-              <Button
-                className="flex-1"
+              </button>
+              <button
                 onClick={() => window.location.href = '/scrapbook'}
+                className="flex-1 bg-white text-black hover:bg-zinc-200 py-3 text-xs font-mono font-bold uppercase tracking-wider"
               >
-                View Scrapbook
-              </Button>
+                Scrapbook
+              </button>
             </div>
+
           </div>
-        </div>
-      )}
-
-      {/* ── Pin Hotspot Dialog Modal ─────────────────────────────────────── */}
-      {showPinModal && (
-        <div className="fixed inset-0 bg-black/90 z-40 flex items-center justify-center p-6 select-none animate-fade-in">
-          <form 
-            onSubmit={handlePinHotspot}
-            className="w-full max-w-sm border border-zinc-900 bg-black p-8 flex flex-col gap-6"
-          >
-            <div>
-              <h2 className="text-xl font-bold text-white tracking-tight uppercase">Pin Location</h2>
-              <p className="text-xs text-zinc-500 font-mono mt-1">{"// SAVE CURRENT COORDINATES"}</p>
-            </div>
-
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs text-zinc-400 font-mono uppercase tracking-wider">Hotspot Title</label>
-                <input
-                  type="text"
-                  placeholder="e.g. My Secret Sunset Spot"
-                  value={pinTitle}
-                  onChange={(e) => setPinTitle(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-900 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-zinc-700 font-mono"
-                  required
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs text-zinc-400 font-mono uppercase tracking-wider">Description (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Align the shoreline..."
-                  value={pinDescription}
-                  onChange={(e) => setPinDescription(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-900 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-zinc-700 font-mono"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs text-zinc-400 font-mono uppercase tracking-wider">Reference Image URL</label>
-                <input
-                  type="url"
-                  placeholder="Unsplash / Direct photo link"
-                  value={pinImageUrl}
-                  onChange={(e) => setPinImageUrl(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-900 rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-zinc-700 font-mono"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setShowPinModal(false)}
-                className="flex-1 border border-zinc-900 hover:border-zinc-800 text-zinc-400 hover:text-white rounded py-2.5 text-xs font-mono tracking-wider transition-colors duration-150 uppercase"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={pinLoading}
-                className="flex-1 bg-white text-black hover:bg-zinc-200 disabled:opacity-50 rounded py-2.5 text-xs font-mono font-bold tracking-wider transition-colors duration-150 uppercase"
-              >
-                {pinLoading ? 'Saving...' : 'Pin Spot'}
-              </button>
-            </div>
-          </form>
         </div>
       )}
     </div>
