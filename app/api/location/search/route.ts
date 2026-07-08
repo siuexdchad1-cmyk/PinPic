@@ -35,13 +35,6 @@ const HANDLES_INSTAGRAM = [
   '@lens.nomad', '@golden.hour.gram', '@travel.composure', '@wanderframe'
 ];
 
-const HANDLES_TIKTOK = [
-  '@travelpov.tt', '@cinematic.shot', '@framesbyfoot', '@bokeh.wanderer'
-];
-
-const HANDLES_YOUTUBE = [
-  '@TravelEdit4K', '@CinematicRoamer', '@ShortsByAltitude', '@ReelLandscape'
-];
 
 // ── Like count generator — weighted toward high-engagement ─────────────────
 function fakeLikes(base: number): number {
@@ -54,20 +47,9 @@ function buildSocialFeed(location: string, lat: number, lng: number): SocialPost
 
   const posts: SocialPost[] = TRAVEL_PHOTO_IDS.map((photoId, i) => {
     const idx = (seed + i) % TRAVEL_PHOTO_IDS.length;
-    const platform: SocialPost['platform'] =
-      i % 3 === 0 ? 'instagram' :
-      i % 3 === 1 ? 'tiktok' :
-      'youtube_shorts';
-
-    const handle =
-      platform === 'instagram' ? HANDLES_INSTAGRAM[i % HANDLES_INSTAGRAM.length] :
-      platform === 'tiktok'    ? HANDLES_TIKTOK[i % HANDLES_TIKTOK.length] :
-                                 HANDLES_YOUTUBE[i % HANDLES_YOUTUBE.length];
-
-    const baseLikes =
-      platform === 'instagram'    ? 14_000 + i * 3_200 :
-      platform === 'tiktok'       ? 82_000 + i * 12_000 :
-                                    6_200  + i * 1_800;
+    const platform = 'instagram' as const;
+    const handle = HANDLES_INSTAGRAM[i % HANDLES_INSTAGRAM.length];
+    const baseLikes = 12_400 + i * 2_800;
 
     // Unsplash CDN direct URL — optimized as requested
     const inspo_image_url =

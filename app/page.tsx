@@ -285,7 +285,7 @@ export default function LandingPage() {
               <FeatureRow index="04" label="Worldwide Geocoding"    value="OpenStreetMap" />
             </div>
             <div>
-              <FeatureRow index="05" label="Community Photo Feed"   value="Wikimedia + Unsplash" />
+              <FeatureRow index="05" label="Community Photo Feed"   value="Instagram Scraper" />
               <FeatureRow index="06" label="Shot Scrapbook"         value="Supabase Cloud" />
               <FeatureRow index="07" label="Global Hotspot Map"     value="Leaflet + CartoDB" />
               <FeatureRow index="08" label="Offline PWA"            value="Service Worker" />

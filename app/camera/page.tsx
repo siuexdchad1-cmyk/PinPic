@@ -136,173 +136,14 @@ const POSE_TEMPLATES: Record<string, PoseTemplate> = {
   }
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function drawTemplateSkeleton(ctx: CanvasRenderingContext2D, w: number, h: number, template: PoseTemplate) {
-  const joints = template.joints;
-  
-  const pt = (p: Point) => ({ x: p.x * w, y: p.y * h });
-
-  const hd = pt(joints.head);
-  const nk = pt(joints.neck);
-  const ls = pt(joints.lShoulder);
-  const rs = pt(joints.rShoulder);
-  const le = pt(joints.lElbow);
-  const re = pt(joints.rElbow);
-  const lw = pt(joints.lWrist);
-  const rw = pt(joints.rWrist);
-  const lh = pt(joints.lHip);
-  const rh = pt(joints.rHip);
-  const lk = pt(joints.lKnee);
-  const rk = pt(joints.rKnee);
-  const la = pt(joints.lAnkle);
-  const ra = pt(joints.rAnkle);
-
-  // ── 1. Draw Thick Silhouette Body Capsules (Glassmorphic limbs) ───────────
-  ctx.strokeStyle = 'rgba(168, 85, 247, 0.15)';
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-
-  const drawLimbCapsule = (p1: { x: number, y: number }, p2: { x: number, y: number }) => {
-    ctx.lineWidth = 24; // Thick body capsule width
-    ctx.beginPath();
-    ctx.moveTo(p1.x, p1.y);
-    ctx.lineTo(p2.x, p2.y);
-    ctx.stroke();
-  };
-
-  // Draw limb capsules
-  drawLimbCapsule(ls, le);
-  drawLimbCapsule(le, lw);
-  drawLimbCapsule(rs, re);
-  drawLimbCapsule(re, rw);
-  drawLimbCapsule(lh, lk);
-  drawLimbCapsule(lk, la);
-  drawLimbCapsule(rh, rk);
-  drawLimbCapsule(rk, ra);
-
-  // ── 2. Draw Filled Torso & Head ──────────────────────────────────────────
-  // Torso polygon
-  ctx.fillStyle = 'rgba(168, 85, 247, 0.1)';
-  ctx.beginPath();
-  ctx.moveTo(ls.x, ls.y);
-  ctx.lineTo(rs.x, rs.y);
-  ctx.lineTo(rh.x, rh.y);
-  ctx.lineTo(lh.x, lh.y);
-  ctx.closePath();
-  ctx.fill();
-
-  // Head filled circle
-  ctx.fillStyle = 'rgba(168, 85, 247, 0.2)';
-  ctx.beginPath();
-  ctx.arc(hd.x, hd.y, 0.045 * h, 0, 2 * Math.PI);
-  ctx.fill();
-
-  // ── 3. Draw Sharp Outline Skeleton (Center bone guides) ────────────────────
-  ctx.strokeStyle = 'rgba(168, 85, 247, 0.7)';
-  ctx.lineWidth = 2;
-
-  const drawBoneLine = (p1: { x: number, y: number }, p2: { x: number, y: number }) => {
-    ctx.beginPath();
-    ctx.moveTo(p1.x, p1.y);
-    ctx.lineTo(p2.x, p2.y);
-    ctx.stroke();
-  };
-
-  drawBoneLine(hd, nk);
-  drawBoneLine(ls, rs);
-  drawBoneLine(lh, rh);
-  drawBoneLine(ls, le);
-  drawBoneLine(le, lw);
-  drawBoneLine(rs, re);
-  drawBoneLine(re, rw);
-  drawBoneLine(lh, lk);
-  drawBoneLine(lk, la);
-  drawBoneLine(rh, rk);
-  drawBoneLine(rk, ra);
-  
-  const hipCenter = { x: (lh.x + rh.x) / 2, y: (lh.y + rh.y) / 2 };
-  drawBoneLine(nk, hipCenter);
-
-  // ── 4. Draw Glowing white-rimmed target joint nodes ────────────────────────
-  const drawTargetJoint = (p: { x: number, y: number }) => {
-    ctx.fillStyle = 'rgba(168, 85, 247, 0.9)';
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
-    ctx.fill();
-    ctx.stroke();
-  };
-
-  [hd, ls, rs, le, re, lw, rw, lh, rh, lk, rk, la, ra].forEach((j) => {
-    drawTargetJoint(j);
-  });
+  // Purged neon skeleton overlays
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function drawLiveSkeleton(ctx: CanvasRenderingContext2D, keypoints: Keypoint[]) {
-  const minConfidence = 0.4;
-  
-  // Neon emerald green for user live skeleton tracking
-  ctx.strokeStyle = '#10b981';
-  ctx.fillStyle = '#10b981';
-  ctx.lineWidth = 4;
-  ctx.shadowColor = '#10b981';
-  ctx.shadowBlur = 8;
-  
-  const kp = (name: string) => {
-    const point = keypoints.find((k) => k.part === name);
-    return point && point.score >= minConfidence ? point.position : null;
-  };
-
-  const drawBone = (p1: { x: number, y: number } | null, p2: { x: number, y: number } | null) => {
-    if (p1 && p2) {
-      ctx.beginPath();
-      ctx.moveTo(p1.x, p1.y);
-      ctx.lineTo(p2.x, p2.y);
-      ctx.stroke();
-    }
-  };
-
-  const ls = kp('leftShoulder');
-  const rs = kp('rightShoulder');
-  const le = kp('leftElbow');
-  const re = kp('rightElbow');
-  const lw = kp('leftWrist');
-  const rw = kp('rightWrist');
-  const lh = kp('leftHip');
-  const rh = kp('rightHip');
-  const lk = kp('leftKnee');
-  const rk = kp('rightKnee');
-  const la = kp('leftAnkle');
-  const ra = kp('rightAnkle');
-
-  drawBone(ls, rs);
-  drawBone(lh, rh);
-  drawBone(ls, le);
-  drawBone(le, lw);
-  drawBone(rs, re);
-  drawBone(re, rw);
-  
-  if (ls && rs && lh && rh) {
-    const midShoulder = { x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2 };
-    const midHip = { x: (lh.x + rh.x) / 2, y: (lh.y + rh.y) / 2 };
-    drawBone(midShoulder, midHip);
-  }
-  
-  drawBone(lh, lk);
-  drawBone(lk, la);
-  drawBone(rh, rk);
-  drawBone(rk, ra);
-
-  // Draw joints
-  keypoints.forEach((k) => {
-    if (k.score >= minConfidence) {
-      ctx.beginPath();
-      ctx.arc(k.position.x, k.position.y, 6, 0, 2 * Math.PI);
-      ctx.fill();
-    }
-  });
-
-  ctx.shadowBlur = 0;
+  // Purged neon live tracking guides
 }
 
 function calculatePoseScore(keypoints: Keypoint[], template: PoseTemplate): number {
@@ -434,9 +275,8 @@ export default function CameraPage() {
 
     function drawCompositionGuides(c: CanvasRenderingContext2D) {
       // Thin 1px white rule-of-thirds lines
-      c.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      c.strokeStyle = 'rgba(255, 255, 255, 0.25)';
       c.lineWidth   = 1;
-      
       [w / 3, (2 * w) / 3].forEach((x) => {
         c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
       });
@@ -444,15 +284,30 @@ export default function CameraPage() {
         c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
       });
 
-      // Center crosshair (20px each arm)
+      // Center crosshair (15px each arm) in solid white
       const cx = w / 2;
       const cy = h / 2;
-      const arm = 10;
-      c.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      const arm = 15;
+      c.strokeStyle = '#ffffff';
+      c.lineWidth = 1;
       c.beginPath();
       c.moveTo(cx - arm, cy); c.lineTo(cx + arm, cy);
       c.moveTo(cx, cy - arm); c.lineTo(cx, cy + arm);
       c.stroke();
+
+      // Leica corner crop marks
+      const pad = 12;
+      const len = 10;
+      c.strokeStyle = '#ffffff';
+      c.lineWidth = 1;
+      // Top-left
+      c.beginPath(); c.moveTo(pad, pad + len); c.lineTo(pad, pad); c.lineTo(pad + len, pad); c.stroke();
+      // Top-right
+      c.beginPath(); c.moveTo(w - pad - len, pad); c.lineTo(w - pad, pad); c.lineTo(w - pad, pad + len); c.stroke();
+      // Bottom-left
+      c.beginPath(); c.moveTo(pad, h - pad - len); c.lineTo(pad, h - pad); c.lineTo(pad + len, h - pad); c.stroke();
+      // Bottom-right
+      c.beginPath(); c.moveTo(w - pad - len, h - pad); c.lineTo(w - pad, h - pad); c.lineTo(w - pad, h - pad - len); c.stroke();
     }
 
     if (imageUrl) {
@@ -720,7 +575,7 @@ export default function CameraPage() {
       }
 
       // Redraw rule-of-thirds grid
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
       ctx.lineWidth = 1;
       [w / 3, (2 * w) / 3].forEach((x) => {
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
@@ -728,6 +583,31 @@ export default function CameraPage() {
       [h / 3, (2 * h) / 3].forEach((y) => {
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
       });
+
+      // Elegant centered rule crosshair matrix
+      const cx = w / 2;
+      const cy = h / 2;
+      const arm = 15;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx - arm, cy); ctx.lineTo(cx + arm, cy);
+      ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy + arm);
+      ctx.stroke();
+
+      // Leica-style corner crop marks
+      const pad = 12;
+      const len = 10;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      // Top-left
+      ctx.beginPath(); ctx.moveTo(pad, pad + len); ctx.lineTo(pad, pad); ctx.lineTo(pad + len, pad); ctx.stroke();
+      // Top-right
+      ctx.beginPath(); ctx.moveTo(w - pad - len, pad); ctx.lineTo(w - pad, pad); ctx.lineTo(w - pad, pad + len); ctx.stroke();
+      // Bottom-left
+      ctx.beginPath(); ctx.moveTo(pad, h - pad - len); ctx.lineTo(pad, h - pad); ctx.lineTo(pad + len, h - pad); ctx.stroke();
+      // Bottom-right
+      ctx.beginPath(); ctx.moveTo(w - pad - len, h - pad); ctx.lineTo(w - pad, h - pad); ctx.lineTo(w - pad, h - pad - len); ctx.stroke();
 
       // Draw the silhouette template skeleton
       const template = POSE_TEMPLATES[selectedPose];
