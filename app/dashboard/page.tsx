@@ -8,6 +8,7 @@ import {
 } from 'recharts';
 import { TrendingUp, Target, MapPin, Camera, Sparkles, BookImage } from 'lucide-react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -29,6 +30,12 @@ export default function DashboardPage() {
   const [barData,    setBarData]    = useState<HotspotEngagementPoint[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [username,   setUsername]   = useState('');
+
+  // settings state
+  const [newPassword, setNewPassword] = useState('');
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -88,6 +95,41 @@ export default function DashboardPage() {
     loadDashboard();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── 1. Update Password Handler ─────────────────────────────────────────────
+  async function handleUpdatePassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters.');
+      return;
+    }
+    setUpdatingPassword(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setUpdatingPassword(false);
+
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success('Password updated successfully.');
+      setNewPassword('');
+    }
+  }
+
+  // ── 2. Delete Account Handler ──────────────────────────────────────────────
+  async function handleDeleteAccount() {
+    setDeletingAccount(true);
+    try {
+      const res = await fetch('/api/user/delete', { method: 'POST' });
+      if (!res.ok) throw new Error('Account deletion failed.');
+
+      await supabase.auth.signOut();
+      toast.success('Your account has been deleted.');
+      window.location.href = '/';
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete account.');
+      setDeletingAccount(false);
+    }
+  }
 
   const chartTooltipStyle = {
     contentStyle: {
@@ -277,6 +319,48 @@ export default function DashboardPage() {
               <BookImage className="h-4 w-4 mr-2" /> Open Travel Scrapbook
             </Button>
           </Link>
+        </div>
+
+        {/* ── Settings Panel ────────────────────────────────────────────── */}
+        <div className="mt-12 border-t border-zinc-900 pt-12 flex flex-col md:flex-row gap-8">
+          {/* Change Password */}
+          <div className="flex-1 border border-zinc-900 rounded-xl p-6 bg-zinc-950/40">
+            <h3 className="text-sm font-semibold font-mono uppercase tracking-wider text-white mb-2">Change Password</h3>
+            <p className="text-xs text-zinc-500 mb-4 leading-relaxed font-mono">{"// RESET CREDENTIALS"}</p>
+            <form onSubmit={handleUpdatePassword} className="flex gap-2">
+              <input
+                type="password"
+                placeholder="New Password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="bg-zinc-950 border border-zinc-900 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-zinc-700 font-mono flex-1"
+                required
+              />
+              <Button type="submit" disabled={updatingPassword} size="sm" className="bg-white text-black hover:bg-zinc-200 font-mono uppercase font-bold text-xs">
+                {updatingPassword ? 'Updating...' : 'Update'}
+              </Button>
+            </form>
+          </div>
+
+          {/* Delete Account */}
+          <div className="flex-1 border border-red-950/20 rounded-xl p-6 bg-zinc-950/20">
+            <h3 className="text-sm font-semibold font-mono uppercase tracking-wider text-red-400 mb-2">Danger Zone</h3>
+            <p className="text-xs text-zinc-500 mb-4 leading-relaxed font-mono">{"// ERASE PROFILE"}</p>
+            {showDeleteConfirm ? (
+              <div className="flex items-center gap-2">
+                <Button onClick={handleDeleteAccount} disabled={deletingAccount} size="sm" className="bg-red-700 hover:bg-red-650 text-white font-mono uppercase font-bold text-xs flex-1">
+                  {deletingAccount ? 'Deleting...' : 'Confirm Permanent Delete'}
+                </Button>
+                <Button onClick={() => setShowDeleteConfirm(false)} size="sm" variant="ghost" className="text-zinc-400 hover:text-white font-mono uppercase text-xs">
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <Button onClick={() => setShowDeleteConfirm(true)} variant="outline" size="sm" className="border-red-900/40 text-red-400 hover:bg-red-950/20 hover:text-red-300 font-mono uppercase text-xs w-full sm:w-auto">
+                Delete Account
+              </Button>
+            )}
+          </div>
         </div>
 
       </main>

@@ -22,6 +22,12 @@ export default function CameraPage() {
   const [result,    setResult]    = useState<ProcessShotResponse | null>(null);
   const [errorMsg,  setErrorMsg]  = useState<string>('');
 
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinTitle, setPinTitle] = useState('');
+  const [pinDescription, setPinDescription] = useState('');
+  const [pinImageUrl, setPinImageUrl] = useState('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=75');
+  const [pinLoading, setPinLoading] = useState(false);
+
 
   // ── Draw wireframe stencil on canvas ──────────────────────────────────────
   const drawStencil = useCallback((imageUrl: string | null) => {
@@ -209,6 +215,56 @@ export default function CameraPage() {
     }
   }
 
+  async function handlePinHotspot(e: React.FormEvent) {
+    e.preventDefault();
+    if (!gps) {
+      toast.error('GPS coordinates not resolved yet. Wait for a location lock.');
+      return;
+    }
+    if (!pinTitle.trim()) {
+      toast.error('Title is required.');
+      return;
+    }
+    if (!pinImageUrl.trim()) {
+      toast.error('Reference image URL is required.');
+      return;
+    }
+
+    setPinLoading(true);
+    try {
+      const res = await fetch('/api/hotspots/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: pinTitle,
+          description: pinDescription,
+          inspoImageUrl: pinImageUrl,
+          lat: gps.latitude,
+          lng: gps.longitude,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to create hotspot.');
+      const data = await res.json();
+      
+      const newHotspot = data.hotspot as NearbyHotspot;
+      setHotspot(newHotspot);
+      setCamState('hotspot-found');
+      drawStencil(newHotspot.inspo_image_url);
+      
+      toast.success(`Hotspot "${newHotspot.title}" pinned successfully!`);
+      setShowPinModal(false);
+      
+      // Reset form fields
+      setPinTitle('');
+      setPinDescription('');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error pinning hotspot.');
+    } finally {
+      setPinLoading(false);
+    }
+  }
+
   // ── Capture frame ──────────────────────────────────────────────────────────
   async function captureFrame() {
     if (!videoRef.current) return;
@@ -308,31 +364,46 @@ export default function CameraPage() {
       {/* ── HUD Overlays (on top of video) ─────────────────────────────── */}
       {isStreaming && (
         <>
-          {/* Top status bar */}
-          <div className="absolute top-4 left-0 right-0 flex justify-center pointer-events-none z-10">
-            {camState === 'hotspot-found' && hotspot ? (
-              <div className="flex flex-col items-center gap-1">
+          {/* Top status bar & Action pill */}
+          <div className="absolute top-4 left-0 right-0 flex flex-col items-center gap-2 z-10 pointer-events-none">
+            <div className="flex items-center gap-2 pointer-events-auto">
+              {camState === 'hotspot-found' && hotspot ? (
+                <div className="flex flex-col items-center gap-1">
+                  <div
+                    className="rounded border px-3 py-1 text-xs font-mono"
+                    style={{ borderColor: '#10b981', color: '#10b981', background: 'rgba(0,0,0,0.75)' }}
+                  >
+                    ● HOTSPOT LOCKED
+                  </div>
+                  <div
+                    className="rounded px-2 py-0.5 text-xs font-mono"
+                    style={{ color: '#a1a1aa', background: 'rgba(0,0,0,0.6)' }}
+                  >
+                    {hotspot.title}
+                  </div>
+                </div>
+              ) : (
                 <div
                   className="rounded border px-3 py-1 text-xs font-mono"
-                  style={{ borderColor: '#10b981', color: '#10b981', background: 'rgba(0,0,0,0.75)' }}
+                  style={{ borderColor: '#27272a', color: '#71717a', background: 'rgba(0,0,0,0.6)' }}
                 >
-                  ● HOTSPOT LOCKED
+                  COMPOSITION GUIDE ACTIVE
                 </div>
-                <div
-                  className="rounded px-2 py-0.5 text-xs"
-                  style={{ color: '#a1a1aa', background: 'rgba(0,0,0,0.6)' }}
-                >
-                  {hotspot.title}
-                </div>
-              </div>
-            ) : (
-              <div
-                className="rounded border px-3 py-1 text-xs font-mono"
-                style={{ borderColor: '#27272a', color: '#71717a', background: 'rgba(0,0,0,0.6)' }}
-              >
-                COMPOSITION GUIDE ACTIVE
-              </div>
-            )}
+              )}
+            </div>
+
+            <button
+              onClick={() => {
+                if (!gps) {
+                  toast.error('GPS location not resolved yet.');
+                  return;
+                }
+                setShowPinModal(true);
+              }}
+              className="pointer-events-auto text-[10px] font-mono border border-zinc-800 bg-zinc-950/90 text-zinc-400 px-2.5 py-1 rounded hover:text-white hover:border-zinc-700 transition-colors duration-150"
+            >
+              PIN CURRENT LOCATION
+            </button>
           </div>
 
           {/* GPS accuracy bottom-left */}
@@ -431,6 +502,75 @@ export default function CameraPage() {
               </Button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Pin Hotspot Dialog Modal ─────────────────────────────────────── */}
+      {showPinModal && (
+        <div className="fixed inset-0 bg-black/90 z-40 flex items-center justify-center p-6 select-none animate-fade-in">
+          <form 
+            onSubmit={handlePinHotspot}
+            className="w-full max-w-sm border border-zinc-900 bg-black p-8 flex flex-col gap-6"
+          >
+            <div>
+              <h2 className="text-xl font-bold text-white tracking-tight uppercase">Pin Location</h2>
+              <p className="text-xs text-zinc-500 font-mono mt-1">{"// SAVE CURRENT COORDINATES"}</p>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-zinc-400 font-mono uppercase tracking-wider">Hotspot Title</label>
+                <input
+                  type="text"
+                  placeholder="e.g. My Secret Sunset Spot"
+                  value={pinTitle}
+                  onChange={(e) => setPinTitle(e.target.value)}
+                  className="bg-zinc-950 border border-zinc-900 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-zinc-700 font-mono"
+                  required
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-zinc-400 font-mono uppercase tracking-wider">Description (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Align the shoreline..."
+                  value={pinDescription}
+                  onChange={(e) => setPinDescription(e.target.value)}
+                  className="bg-zinc-950 border border-zinc-900 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-zinc-700 font-mono"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-zinc-400 font-mono uppercase tracking-wider">Reference Image URL</label>
+                <input
+                  type="url"
+                  placeholder="Unsplash / Direct photo link"
+                  value={pinImageUrl}
+                  onChange={(e) => setPinImageUrl(e.target.value)}
+                  className="bg-zinc-950 border border-zinc-900 rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-zinc-700 font-mono"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowPinModal(false)}
+                className="flex-1 border border-zinc-900 hover:border-zinc-800 text-zinc-400 hover:text-white rounded py-2.5 text-xs font-mono tracking-wider transition-colors duration-150 uppercase"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={pinLoading}
+                className="flex-1 bg-white text-black hover:bg-zinc-200 disabled:opacity-50 rounded py-2.5 text-xs font-mono font-bold tracking-wider transition-colors duration-150 uppercase"
+              >
+                {pinLoading ? 'Saving...' : 'Pin Spot'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>
