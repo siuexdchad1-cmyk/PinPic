@@ -24,7 +24,7 @@ export default function CameraPage() {
 
 
   // ── Draw wireframe stencil on canvas ──────────────────────────────────────
-  const drawStencil = useCallback((imageUrl: string) => {
+  const drawStencil = useCallback((imageUrl: string | null) => {
     const canvas = canvasRef.current;
     const video  = videoRef.current;
     if (!canvas || !video) return;
@@ -32,100 +32,55 @@ export default function CameraPage() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    canvas.width  = video.videoWidth  || canvas.offsetWidth;
-    canvas.height = video.videoHeight || canvas.offsetHeight;
+    canvas.width  = video.videoWidth  || canvas.offsetWidth || 640;
+    canvas.height = video.videoHeight || canvas.offsetHeight || 480;
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const w = canvas.width;
+    const h = canvas.height;
 
-    // Load reference image for edge analysis
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      // ctx is guaranteed non-null here — checked above before setting img.src
-      const c = ctx!;
-      const w = canvas.width;
-      const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
 
-      // Draw low-opacity reference image as silhouette guide
-      c.globalAlpha = 0.18;
-      c.drawImage(img, 0, 0, w, h);
-      c.globalAlpha = 1;
-
-      // Draw rule-of-thirds grid
-      c.strokeStyle = 'rgba(16,185,129,0.3)';
+    function drawCompositionGuides(c: CanvasRenderingContext2D) {
+      // Thin 1px white rule-of-thirds lines
+      c.strokeStyle = 'rgba(255, 255, 255, 0.2)';
       c.lineWidth   = 1;
-      c.setLineDash([4, 4]);
+      
       [w / 3, (2 * w) / 3].forEach((x) => {
         c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
       });
       [h / 3, (2 * h) / 3].forEach((y) => {
         c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
       });
-      c.setLineDash([]);
 
-      // Draw human pose wireframe skeleton
-      c.strokeStyle = '#10b981';
-      c.lineWidth   = 2;
-      c.globalAlpha = 0.85;
-
+      // Center crosshair (20px each arm)
       const cx = w / 2;
-      const scale = h / 440;
-
-      function line(x1: number, y1: number, x2: number, y2: number) {
-        c.beginPath();
-        c.moveTo(cx + (x1 - 110) * scale, y1 * scale);
-        c.lineTo(cx + (x2 - 110) * scale, y2 * scale);
-        c.stroke();
-      }
-      function dot(x: number, y: number) {
-        c.beginPath();
-        c.arc(cx + (x - 110) * scale, y * scale, 3 * scale, 0, Math.PI * 2);
-        c.fillStyle = '#10b981';
-        c.fill();
-      }
-
-      // Head
+      const cy = h / 2;
+      const arm = 10;
+      c.strokeStyle = 'rgba(255, 255, 255, 0.4)';
       c.beginPath();
-      c.arc(cx, 120 * scale, 18 * scale, 0, Math.PI * 2);
+      c.moveTo(cx - arm, cy); c.lineTo(cx + arm, cy);
+      c.moveTo(cx, cy - arm); c.lineTo(cx, cy + arm);
       c.stroke();
+    }
 
-      // Body
-      line(110, 138, 110, 158); // neck
-      line(70, 165, 150, 165);  // shoulders
-      line(110, 158, 110, 265); // torso
-      line(82, 265, 138, 265);  // hips
-      // Arms
-      line(70, 165, 50, 215); line(50, 215, 40, 250);
-      line(150, 165, 170, 215); line(170, 215, 180, 250);
-      // Legs
-      line(90, 265, 82, 330); line(82, 330, 78, 390);
-      line(130, 265, 138, 330); line(138, 330, 142, 390);
-      // Feet
-      line(70, 390, 88, 390); line(132, 390, 152, 390);
-
-      // Joints
-      [[70,165],[150,165],[50,215],[170,215],[82,265],[138,265]].forEach(
-        ([x,y]) => dot(x,y)
-      );
-
-      c.globalAlpha = 1;
-    };
-    img.onerror = () => {
-      // If image fails to load, still show the grid and skeleton
-      drawFallbackStencil(ctx, canvas.width, canvas.height);
-    };
-    img.src = imageUrl;
+    if (imageUrl) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const c = ctx!;
+        c.globalAlpha = 0.12;
+        c.drawImage(img, 0, 0, w, h);
+        c.globalAlpha = 1;
+        drawCompositionGuides(c);
+      };
+      img.onerror = () => {
+        drawCompositionGuides(ctx);
+      };
+      img.src = imageUrl;
+    } else {
+      drawCompositionGuides(ctx);
+    }
   }, []);
-
-  function drawFallbackStencil(ctx: CanvasRenderingContext2D, w: number, h: number) {
-    ctx.clearRect(0, 0, w, h);
-    ctx.strokeStyle = 'rgba(16,185,129,0.3)';
-    ctx.lineWidth   = 1;
-    ctx.setLineDash([4, 4]);
-    [w/3, 2*w/3].forEach(x => { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); });
-    [h/3, 2*h/3].forEach(y => { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); });
-    ctx.setLineDash([]);
-  }
 
   // ── Query nearby hotspots ──────────────────────────────────────────────────
   const checkProximity = useCallback(
@@ -146,12 +101,8 @@ export default function CameraPage() {
           setHotspot(null);
           if (camState === 'hotspot-found') {
             setCamState('streaming');
-            const canvas = canvasRef.current;
-            if (canvas) {
-              const ctx = canvas.getContext('2d');
-              ctx?.clearRect(0, 0, canvas.width, canvas.height);
-            }
           }
+          drawStencil(null);
         }
       } catch {
         // Proximity check failure is non-fatal
@@ -178,6 +129,7 @@ export default function CameraPage() {
         await videoRef.current.play();
       }
       setCamState('streaming');
+      drawStencil(null);
 
       // Start GPS watch
       if ('geolocation' in navigator) {
@@ -222,6 +174,7 @@ export default function CameraPage() {
         await videoRef.current.play();
       }
       setCamState('streaming');
+      drawStencil(null);
 
       const initGps: GpsCoordinates = {
         latitude: coords.latitude,
@@ -258,7 +211,7 @@ export default function CameraPage() {
 
   // ── Capture frame ──────────────────────────────────────────────────────────
   async function captureFrame() {
-    if (!videoRef.current || !hotspot) return;
+    if (!videoRef.current) return;
     setCamState('capturing');
 
     const snapCanvas = document.createElement('canvas');
@@ -276,8 +229,8 @@ export default function CameraPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageBase64,
-          hotspotImageUrl: hotspot.inspo_image_url,
-          hotspotId:       hotspot.id,
+          hotspotImageUrl: hotspot?.inspo_image_url ?? null,
+          hotspotId:       hotspot?.id ?? null,
         }),
       });
 
@@ -321,7 +274,7 @@ export default function CameraPage() {
       <canvas
         ref={canvasRef}
         className="camera-canvas"
-        style={{ display: camState === 'hotspot-found' ? 'block' : 'none' }}
+        style={{ display: isStreaming ? 'block' : 'none' }}
         aria-hidden="true"
       />
 
@@ -377,7 +330,7 @@ export default function CameraPage() {
                 className="rounded border px-3 py-1 text-xs font-mono"
                 style={{ borderColor: '#27272a', color: '#71717a', background: 'rgba(0,0,0,0.6)' }}
               >
-                SCANNING FOR HOTSPOT…
+                COMPOSITION GUIDE ACTIVE
               </div>
             )}
           </div>
@@ -402,16 +355,16 @@ export default function CameraPage() {
             ) : (
               <button
                 onClick={captureFrame}
-                disabled={camState !== 'hotspot-found'}
+                disabled={['capturing', 'processing'].includes(camState)}
                 id="capture-btn"
                 aria-label="Capture photo"
-                className={`h-16 w-16 rounded-full border-4 border-white flex items-center justify-center transition-opacity
-                  ${camState === 'hotspot-found' ? 'opacity-100 capture-btn-pulse' : 'opacity-30 cursor-not-allowed'}`}
+                className={`h-16 w-16 rounded-full border-4 border-white flex items-center justify-center transition-all duration-150 active:scale-[0.95]
+                  ${camState === 'hotspot-found' ? 'capture-btn-pulse' : ''}`}
                 style={{ background: 'rgba(0,0,0,0.5)' }}
               >
                 <div
-                  className="h-10 w-10 rounded-full"
-                  style={{ background: camState === 'hotspot-found' ? '#10b981' : '#fff' }}
+                  className="h-10 w-10 rounded-full transition-colors duration-150"
+                  style={{ background: camState === 'hotspot-found' ? '#10b981' : '#ffffff' }}
                 />
               </button>
             )}

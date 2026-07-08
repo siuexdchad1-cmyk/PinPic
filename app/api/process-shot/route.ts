@@ -30,9 +30,9 @@ export async function POST(request: NextRequest) {
 
   const { imageBase64, hotspotImageUrl, hotspotId } = body;
 
-  if (!imageBase64 || !hotspotImageUrl || !hotspotId) {
+  if (!imageBase64) {
     return NextResponse.json(
-      { error: 'imageBase64, hotspotImageUrl, and hotspotId are required.' },
+      { error: 'imageBase64 is required.' },
       { status: 400 }
     );
   }
@@ -41,12 +41,42 @@ export async function POST(request: NextRequest) {
   let visionResult: GroqVisionResult;
 
   try {
-    const visionResponse = await groq.chat.completions.create({
-      model: 'meta-llama/llama-3.2-11b-vision-preview',
-      messages: [
-        {
-          role: 'system',
-          content: `You are a professional photography composition analyst.
+    const isUniversalMode = !hotspotImageUrl || !hotspotId;
+    const messages = isUniversalMode
+      ? [
+          {
+            role: 'system',
+            content: `You are a professional photography composition analyst.
+Analyze the user's captured photo.
+Evaluate: subject alignment, framing, rule-of-thirds adherence, horizon leveling, and depth.
+Return ONLY valid JSON with this exact schema:
+{
+  "match_accuracy_percentage": <integer 0-100>,
+  "adjustments": [<array of max 3 short actionable text tips>],
+  "composition_notes": "<one sentence summary>"
+}`,
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'User captured image:',
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: imageBase64,
+                  detail: 'low',
+                },
+              },
+            ],
+          },
+        ]
+      : [
+          {
+            role: 'system',
+            content: `You are a professional photography composition analyst.
 Analyze the user's captured photo against the reference composition image.
 Evaluate: subject alignment, framing, rule-of-thirds adherence, horizon leveling, and depth.
 Return ONLY valid JSON with this exact schema:
@@ -55,35 +85,40 @@ Return ONLY valid JSON with this exact schema:
   "adjustments": [<array of max 3 short actionable text tips>],
   "composition_notes": "<one sentence summary>"
 }`,
-        },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: 'Reference composition image:',
-            },
-            {
-              type: 'image_url',
-              image_url: {
-                url: hotspotImageUrl,
-                detail: 'low', // low detail = faster, less tokens, mobile-friendly
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Reference composition image:',
               },
-            },
-            {
-              type: 'text',
-              text: 'User captured image:',
-            },
-            {
-              type: 'image_url',
-              image_url: {
-                url: imageBase64,
-                detail: 'low',
+              {
+                type: 'image_url',
+                image_url: {
+                  url: hotspotImageUrl,
+                  detail: 'low',
+                },
               },
-            },
-          ],
-        },
-      ],
+              {
+                type: 'text',
+                text: 'User captured image:',
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: imageBase64,
+                  detail: 'low',
+                },
+              },
+            ],
+          },
+        ];
+
+    const visionResponse = await groq.chat.completions.create({
+      model: 'meta-llama/llama-3.2-11b-vision-preview',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      messages: messages as any,
       max_tokens: 256,
       temperature: 0.2,
     });
@@ -171,12 +206,18 @@ Write a travel caption and hashtags for this shot.`,
 
   // ── 6. Milestone email — fire if match >= 95% ──────────────────────────────
   if (matchAccuracy >= 95) {
-    // Get hotspot title for the email
-    const { data: hotspot } = await supabase
-      .from('hotspots')
-      .select('title')
-      .eq('id', hotspotId)
-      .single();
+    let hotspotTitle = 'your custom location';
+    
+    if (hotspotId) {
+      const { data: hotspot } = await supabase
+        .from('hotspots')
+        .select('title')
+        .eq('id', hotspotId)
+        .single();
+      if (hotspot?.title) {
+        hotspotTitle = hotspot.title;
+      }
+    }
 
     // Get user email
     const { data: { user: freshUser } } = await supabase.auth.getUser();
@@ -190,7 +231,7 @@ Write a travel caption and hashtags for this shot.`,
           html: buildMilestoneEmail({
             username:     freshUser.user_metadata?.username ?? freshUser.email.split('@')[0],
             matchAccuracy,
-            hotspotTitle: hotspot?.title ?? 'this location',
+            hotspotTitle,
             appUrl:       process.env.NEXT_PUBLIC_APP_URL!,
           }),
         });
