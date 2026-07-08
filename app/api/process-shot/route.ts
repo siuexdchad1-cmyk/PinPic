@@ -116,7 +116,7 @@ Return ONLY valid JSON with this exact schema:
         ];
 
     const visionResponse = await groq.chat.completions.create({
-      model: 'meta-llama/llama-3.2-11b-vision-preview',
+      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       messages: messages as any,
       max_tokens: 256,
