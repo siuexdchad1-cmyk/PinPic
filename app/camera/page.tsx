@@ -852,6 +852,46 @@ export default function CameraPage() {
     }
   }
 
+  // ── Load hotspot preset from query param ────────────────────────────────────
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const refId = params.get('ref');
+    if (refId) {
+      fetch('/api/hotspots')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.hotspots) {
+            const found = (data.hotspots as {
+              id: string;
+              title: string;
+              description: string | null;
+              inspo_image_url: string;
+              lat: number;
+              lng: number;
+            }[]).find((h) => h.id === refId);
+            if (found) {
+              setHotspot({
+                id: found.id,
+                title: found.title,
+                description: found.description,
+                inspo_image_url: found.inspo_image_url,
+                location: `POINT(${found.lng} ${found.lat})`,
+                license_source: 'Unsplash-Open-Asset',
+                created_at: new Date().toISOString(),
+                distance_m: 0,
+              });
+              setCamState('hotspot-found');
+              setPinImageUrl(found.inspo_image_url);
+              drawStencil(found.inspo_image_url);
+              toast.success(`Reference photo set: ${found.title}`);
+            }
+          }
+        })
+        .catch((err) => console.error('Error fetching ref hotspot:', err));
+    }
+  }, [drawStencil]);
+
   // ── Cleanup on unmount ─────────────────────────────────────────────────────
   useEffect(() => {
     return () => {

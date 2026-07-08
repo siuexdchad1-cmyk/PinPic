@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 
 const navLinks = [
   { href: '/dashboard',  label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/explore',    label: 'Explore Map',icon: MapPin },
   { href: '/camera',     label: 'Camera',    icon: Camera },
   { href: '/scrapbook',  label: 'Scrapbook', icon: BookImage },
 ];
