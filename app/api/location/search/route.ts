@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export interface SocialPost {
   id:             string;
-  platform:       'instagram' | 'tiktok' | 'youtube_shorts';
+  platform:       'instagram';
   inspo_image_url: string;
   user_handle:    string;
   likes_count:    number;
