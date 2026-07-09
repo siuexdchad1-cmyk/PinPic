@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import type { NearbyHotspot } from '@/lib/types';
+import Groq from 'groq-sdk';
+
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export const dynamic = 'force-dynamic';
 
@@ -178,13 +181,55 @@ export async function GET(request: Request) {
         headers: { 'User-Agent': 'PinPic/1.0 (support@pinpic.travel)' },
         next: { revalidate: 3600 }
       });
+      let results = [];
       if (geocodeRes.ok) {
-        const results = await geocodeRes.json();
-        if (results && results.length > 0) {
-          latVal = parseFloat(results[0].lat);
-          lngVal = parseFloat(results[0].lon);
-          displayName = results[0].display_name || query;
+        results = await geocodeRes.json();
+      }
+
+      // If initial Nominatim search returns zero results, trigger AI correction step
+      if ((!results || results.length === 0) && process.env.GROQ_API_KEY) {
+        try {
+          const chatCompletion = await groq.chat.completions.create({
+            model: 'llama-3.3-70b-versatile',
+            messages: [
+              {
+                role: 'user',
+                content: `The user typed a place name that may be misspelled or abbreviated: '${query}'. Return only the most likely correct, full place name (city/landmark/region), nothing else. If the input is already a valid recognizable place name, return it unchanged.`
+              }
+            ],
+            temperature: 0.1,
+            max_tokens: 64
+          });
+
+          const correctedQuery = chatCompletion.choices[0]?.message?.content?.trim();
+          if (correctedQuery && correctedQuery.toLowerCase() !== query.toLowerCase()) {
+            console.log(`[AI Spell Correct]: Corrected "${query}" to "${correctedQuery}"`);
+            
+            // Re-run the Nominatim query with the corrected place name
+            const retryGeocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(correctedQuery)}&format=json&limit=1`;
+            const retryGeocodeRes = await fetch(retryGeocodeUrl, {
+              headers: { 'User-Agent': 'PinPic/1.0 (support@pinpic.travel)' },
+              next: { revalidate: 3600 }
+            });
+            if (retryGeocodeRes.ok) {
+              const retryResults = await retryGeocodeRes.json();
+              if (retryResults && retryResults.length > 0) {
+                results = retryResults;
+                // Also update displayName to the corrected name
+                displayName = correctedQuery;
+              }
+            }
+          }
+        } catch (groqErr) {
+          console.warn('[Groq AI correction failed]:', groqErr);
         }
+      }
+
+      // Parse final results
+      if (results && results.length > 0) {
+        latVal = parseFloat(results[0].lat);
+        lngVal = parseFloat(results[0].lon);
+        displayName = results[0].display_name || displayName;
       }
     }
 
