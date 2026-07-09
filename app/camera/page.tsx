@@ -26,6 +26,10 @@ export default function CameraPage() {
   const [isSideBySide, setIsSideBySide] = useState<boolean>(false);
   const [showSuggestions, setShowSuggestions] = useState<boolean>(true);
 
+  // ── Manual Location Search Override ───────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isManualOverride, setIsManualOverride] = useState<boolean>(false);
+
   // ── Draw stark white editorial alignment guides ───────────────────────────
   const drawCompositionGuides = useCallback(() => {
     const canvas = canvasRef.current;
@@ -107,6 +111,43 @@ export default function CameraPage() {
     }
   }, [selectedPost]);
 
+  // ── Trigger manual location search ────────────────────────────────────────
+  const handleManualSearch = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+
+    setIsManualOverride(true);
+    try {
+      const res = await fetch(`/api/location/search?query=${encodeURIComponent(searchQuery.trim())}`);
+      if (!res.ok) {
+        toast.error("Location not found.");
+        return;
+      }
+      const data: LocationSearchResult = await res.json();
+      if (data && data.posts) {
+        setSocialPosts(data.posts);
+        if (data.posts.length > 0) {
+          setSelectedPost(data.posts[0]);
+          toast.success(`Loaded inspiration for: ${searchQuery}`);
+        } else {
+          toast.error("No inspiration photos found for this location.");
+        }
+      }
+    } catch {
+      toast.error("Search failed.");
+    }
+  }, [searchQuery]);
+
+  // ── Restore GPS auto-geolocation suggestions ──────────────────────────────
+  const clearManualOverride = useCallback(() => {
+    setIsManualOverride(false);
+    setSearchQuery('');
+    if (gps) {
+      // Trigger instant fetch with the current GPS coordinates
+      fetchSocialPosts(gps.latitude, gps.longitude);
+    }
+  }, [gps, fetchSocialPosts]);
+
   // ── Start browser camera video streaming ──────────────────────────────────
   async function startCamera() {
     setCamState('requesting-permissions');
@@ -156,7 +197,9 @@ export default function CameraPage() {
               accuracy: pos.coords.accuracy,
             };
             setGps(coords);
-            fetchSocialPosts(coords.latitude, coords.longitude);
+            if (!isManualOverride) {
+              fetchSocialPosts(coords.latitude, coords.longitude);
+            }
           },
           (err) => {
             console.warn('[GPS Watcher Failure]', err.message);
@@ -171,7 +214,7 @@ export default function CameraPage() {
         watchIdRef.current = null;
       }
     };
-  }, [camState, fetchSocialPosts]);
+  }, [camState, fetchSocialPosts, isManualOverride]);
 
   // ── Capture viewfinder photo frame ─────────────────────────────────────────
   async function captureFrame() {
@@ -275,48 +318,80 @@ export default function CameraPage() {
           )}
         </div>
 
-        {/* ── Control Center (Translucent Overlay Opacity & Layout Toggles) ───── */}
-        {isStreaming && selectedPost && (
-          <div className="absolute top-4 left-4 right-4 z-20 flex justify-between items-center gap-4 pointer-events-auto">
-            {/* Opacity slider for full screen overlay mode */}
-            {!isSideBySide ? (
-              <div className="flex items-center gap-3 bg-black border border-zinc-900 px-3 py-1.5 rounded-none w-52">
-                <Sliders className="h-3 w-3 text-zinc-500 shrink-0" />
-                <input
-                  type="range"
-                  min="0.0"
-                  max="1.0"
-                  step="0.05"
-                  value={overlayOpacity}
-                  onChange={(e) => setOverlayOpacity(parseFloat(e.target.value))}
-                  className="w-full h-1 bg-zinc-800 rounded-none appearance-none cursor-pointer accent-white"
-                  title="Reference opacity"
-                />
-                <span className="text-[10px] font-mono text-zinc-400 shrink-0 w-8 text-right">
-                  {Math.round(overlayOpacity * 100)}%
-                </span>
-              </div>
-            ) : (
-              <div />
-            )}
+        {/* ── Search Input & Controls Bar ──────────────────────────────────── */}
+        {isStreaming && (
+          <div className="absolute top-4 left-4 right-4 z-20 flex flex-col gap-2 pointer-events-auto max-w-md mx-auto w-[calc(100%-2rem)]">
+            {/* Search Input Bar */}
+            <form onSubmit={handleManualSearch} className="flex gap-1.5 w-full">
+              <input
+                type="text"
+                placeholder="Search location manual..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="flex-1 bg-black/85 border border-zinc-900 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500 rounded-none"
+              />
+              <button
+                type="submit"
+                className="bg-white text-black hover:bg-zinc-200 px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-none shrink-0"
+              >
+                Search
+              </button>
+              {isManualOverride && (
+                <button
+                  type="button"
+                  onClick={clearManualOverride}
+                  className="bg-zinc-950 border border-zinc-900 hover:border-zinc-800 text-zinc-400 hover:text-white px-2 py-1.5 text-[10px] font-mono uppercase rounded-none shrink-0"
+                  title="Restore GPS Mode"
+                >
+                  GPS Mode
+                </button>
+              )}
+            </form>
 
-            {/* Display Mode Selector */}
-            <div className="flex gap-1">
-              <button
-                onClick={() => setIsSideBySide((v) => !v)}
-                className="bg-black border border-zinc-900 hover:bg-zinc-900 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider flex items-center gap-1.5"
-              >
-                <LayoutGrid className="h-3.5 w-3.5" />
-                {isSideBySide ? 'Overlay Mode' : 'Side-by-Side'}
-              </button>
-              <button
-                onClick={() => setSelectedPost(null)}
-                className="bg-black border border-zinc-900 hover:bg-zinc-900 p-1.5"
-                title="Clear inspiration"
-              >
-                <X className="h-3.5 w-3.5 text-zinc-400" />
-              </button>
-            </div>
+            {/* Display / opacity sliders (only shown when stencil is loaded) */}
+            {selectedPost && (
+              <div className="flex justify-between items-center gap-2 w-full mt-1">
+                {/* Opacity slider for full screen overlay mode */}
+                {!isSideBySide ? (
+                  <div className="flex items-center gap-2 bg-black border border-zinc-900 px-2 py-1 rounded-none w-36">
+                    <Sliders className="h-3 w-3 text-zinc-500 shrink-0" />
+                    <input
+                      type="range"
+                      min="0.0"
+                      max="1.0"
+                      step="0.05"
+                      value={overlayOpacity}
+                      onChange={(e) => setOverlayOpacity(parseFloat(e.target.value))}
+                      className="w-full h-1 bg-zinc-800 rounded-none appearance-none cursor-pointer accent-white"
+                      title="Reference opacity"
+                    />
+                    <span className="text-[9px] font-mono text-zinc-400 shrink-0 w-6 text-right">
+                      {Math.round(overlayOpacity * 100)}%
+                    </span>
+                  </div>
+                ) : (
+                  <div />
+                )}
+
+                {/* Display Mode Selector */}
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => setIsSideBySide((v) => !v)}
+                    className="bg-black border border-zinc-900 hover:bg-zinc-900 px-2.5 py-1 text-[9px] font-mono uppercase tracking-wider flex items-center gap-1"
+                  >
+                    <LayoutGrid className="h-3 w-3" />
+                    {isSideBySide ? 'Overlay' : 'Side-by-Side'}
+                  </button>
+                  <button
+                    onClick={() => setSelectedPost(null)}
+                    className="bg-black border border-zinc-900 hover:bg-zinc-900 p-1"
+                    title="Clear inspiration"
+                  >
+                    <X className="h-3 w-3 text-zinc-400" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
