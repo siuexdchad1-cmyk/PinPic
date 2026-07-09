@@ -42,22 +42,26 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── 2b. Reference photo guard ─────────────────────────────────────────────
-  if (!hotspotImageUrl || hotspotImageUrl.trim() === '' || hotspotImageUrl.toLowerCase().includes('placeholder')) {
-    return NextResponse.json(
-      { error: 'No reference photo available yet for this location' },
-      { status: 400 }
-    );
-  }
+  // ── 2b. Reference photo check ─────────────────────────────────────────────
+  const hasReference = !!(hotspotImageUrl && hotspotImageUrl.trim() !== '' && !hotspotImageUrl.toLowerCase().includes('placeholder'));
 
-  // ── 3. Groq Vision — composition analysis with Retry-Once & JSON mode ─────
-  let visionResult: GroqVisionResult | null = null;
-  let attempts = 0;
+  let visionResult: GroqVisionResult = {
+    score: 0,
+    strengths: ['Captured image recorded.'],
+    improvements: ['No reference target loaded.']
+  };
 
-  const messages = [
-    {
-      role: 'system',
-      content: `You are a professional photography composition analyst.
+  let matchAccuracy: number | null = null;
+
+  if (hasReference) {
+    // ── 3. Groq Vision — composition analysis with Retry-Once & JSON mode ─────
+    let visionResultParsed: GroqVisionResult | null = null;
+    let attempts = 0;
+
+    const messages = [
+      {
+        role: 'system',
+        content: `You are a professional photography composition analyst.
 Analyze the user's captured photo against the reference composition image.
 Compare their composition objectively across these dimensions:
 1. Framing: Subject size, borders, crop symmetry.
@@ -72,71 +76,75 @@ Return ONLY valid JSON matching this schema:
   "strengths": [<array of 2-3 specific, grounded strengths observed>],
   "improvements": [<array of 2-3 specific, actionable corrections for framing/alignment>]
 }`
-    },
-    {
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: 'Reference composition image:',
-        },
-        {
-          type: 'image_url',
-          image_url: {
-            url: hotspotImageUrl,
-            detail: 'low',
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: 'Reference composition image:',
           },
-        },
-        {
-          type: 'text',
-          text: 'User captured image:',
-        },
-        {
-          type: 'image_url',
-          image_url: {
-            url: imageBase64,
-            detail: 'low',
+          {
+            type: 'image_url',
+            image_url: {
+              url: hotspotImageUrl!,
+              detail: 'low',
+            },
           },
-        },
-      ],
-    },
-  ];
+          {
+            type: 'text',
+            text: 'User captured image:',
+          },
+          {
+            type: 'image_url',
+            image_url: {
+              url: imageBase64,
+              detail: 'low',
+            },
+          },
+        ],
+      },
+    ];
 
-  while (attempts < 2 && !visionResult) {
-    attempts++;
-    try {
-      const visionResponse = await groq.chat.completions.create({
-        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        messages: messages as any,
-        max_tokens: 256,
-        temperature: 0.1,
-        response_format: { type: 'json_object' }
-      });
+    while (attempts < 2 && !visionResultParsed) {
+      attempts++;
+      try {
+        const visionResponse = await groq.chat.completions.create({
+          model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          messages: messages as any,
+          max_tokens: 256,
+          temperature: 0.1,
+          response_format: { type: 'json_object' }
+        });
 
-      const raw = visionResponse.choices[0]?.message?.content ?? '{}';
-      const parsed = JSON.parse(raw);
-      if (typeof parsed.score === 'number' && Array.isArray(parsed.strengths) && Array.isArray(parsed.improvements)) {
-        visionResult = parsed as GroqVisionResult;
-      } else {
-        console.warn(`[process-shot] Vision payload missing schema keys on attempt ${attempts}`);
+        const raw = visionResponse.choices[0]?.message?.content ?? '{}';
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.score === 'number' && Array.isArray(parsed.strengths) && Array.isArray(parsed.improvements)) {
+          visionResultParsed = parsed as GroqVisionResult;
+        } else {
+          console.warn(`[process-shot] Vision payload missing schema keys on attempt ${attempts}`);
+        }
+      } catch (err) {
+        console.warn(`[process-shot] Groq Vision attempt ${attempts} failed:`, err);
       }
-    } catch (err) {
-      console.warn(`[process-shot] Groq Vision attempt ${attempts} failed:`, err);
+    }
+
+    if (visionResultParsed) {
+      visionResult = visionResultParsed;
+      matchAccuracy = Math.min(100, Math.max(0, Math.round(visionResult.score)));
+    } else {
+      // Graceful degradation fallback
+      visionResult = {
+        score: 50,
+        strengths: ['User photo successfully captured.'],
+        improvements: ['Could not analyse composition details — try recapturing.']
+      };
+      matchAccuracy = 50;
     }
   }
 
-  if (!visionResult) {
-    // Graceful degradation fallback
-    visionResult = {
-      score: 50,
-      strengths: ['User photo successfully captured.'],
-      improvements: ['Could not analyse composition details — try recapturing.']
-    };
-  }
-
-  const matchAccuracy = Math.min(100, Math.max(0, Math.round(visionResult.score)));
-  const adjustments = visionResult.improvements;
+  const adjustments = hasReference ? visionResult.improvements : [];
 
   // ── 4. Groq Text — caption + hashtag synthesis ─────────────────────────────
   let captionResult: GroqCaptionResult;
@@ -158,11 +166,13 @@ Return ONLY valid JSON with this exact schema:
         },
         {
           role: 'user',
-          content: `Composition score: ${matchAccuracy}%
+          content: hasReference
+            ? `Composition score: ${matchAccuracy}%
 Strengths: ${visionResult.strengths.join(', ')}
 Adjustments made: ${visionResult.improvements.join(', ')}
 
-Write a travel caption and hashtags for this shot.`,
+Write a travel caption and hashtags for this shot.`
+            : `Write a travel caption and hashtags for a travel photo captured at a new location.`
         },
       ],
       max_tokens: 512,
@@ -193,7 +203,7 @@ Write a travel caption and hashtags for this shot.`,
       match_accuracy:     matchAccuracy,
       ai_caption:         captionResult.caption,
       tags:               captionResult.tags,
-      reference_image_url: hotspotImageUrl // Storing actual inspo reference image used
+      reference_image_url: hasReference ? hotspotImageUrl : null
     })
     .select('id')
     .single();
@@ -203,7 +213,7 @@ Write a travel caption and hashtags for this shot.`,
   }
 
   // ── 6. Milestone email — fire if match >= 95% ──────────────────────────────
-  if (matchAccuracy >= 95) {
+  if (matchAccuracy && matchAccuracy >= 95) {
     let hotspotTitle = 'your custom location';
     
     if (hotspotId) {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { MapPin, Camera, AlertCircle } from 'lucide-react';
+import { MapPin, Camera, AlertCircle, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface PermissionsWizardProps {
@@ -21,7 +21,7 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
     setError(null);
 
     if (!('geolocation' in navigator)) {
-      setError('This browser does not support GPS location.');
+      setError('GPS Location is not supported by this browser.');
       setLoading(false);
       return;
     }
@@ -66,7 +66,7 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
       if (cachedCoords) {
         onComplete(cachedCoords);
       } else {
-        setError('GPS data was lost. Please go back and allow location again.');
+        setError('GPS coordinates lost. Please restart the setup.');
         setStep(1);
         setLoading(false);
       }
@@ -77,33 +77,35 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
   }
 
   return (
-    <div
-      className="fixed inset-0 bg-black z-50 flex items-center justify-center p-6"
-      style={{ transform: 'translate3d(0,0,0)' }}
-    >
-      <div className="w-full max-w-sm border border-zinc-900 bg-black p-8 flex flex-col">
+    <div className="fixed inset-0 bg-black z-50 flex flex-col justify-between p-6 md:p-12 select-none animate-fade-in">
+      {/* Top Header */}
+      <div className="flex justify-between items-center w-full border-b border-zinc-900 pb-4">
+        <span className="text-[10px] font-mono tracking-widest text-emerald-400 font-bold uppercase">
+          ● PINPIC SETUP WIZARD
+        </span>
+        <span className="text-[10px] font-mono text-zinc-500">
+          STEP {step} OF 2
+        </span>
+      </div>
 
-        {/* Step indicator */}
-        <div className="flex items-center gap-2 mb-10">
-          <div className={`h-px flex-1 transition-colors duration-150 ${step >= 1 ? 'bg-white' : 'bg-zinc-800'}`} />
-          <div className={`h-px flex-1 transition-colors duration-150 ${step >= 2 ? 'bg-white' : 'bg-zinc-800'}`} />
-        </div>
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col justify-center max-w-md mx-auto w-full py-8">
+        {step === 1 ? (
+          <div className="flex flex-col animate-slide-up">
+            <div className="h-12 w-12 border border-zinc-800 flex items-center justify-center bg-zinc-950 mb-8">
+              <MapPin className="h-5 w-5 text-white" />
+            </div>
 
-        {/* ── STEP 1: Location Access ──────────────────────────────────────── */}
-        {step === 1 && (
-          <div className="flex flex-col">
-            <MapPin className="h-6 w-6 text-white mb-8" />
-
-            <h1 className="text-2xl font-bold text-white tracking-tight mb-2">
-              Location Access
+            <h1 className="text-3xl font-bold tracking-tight text-white mb-4 uppercase font-mono">
+              GPS LOCATION
             </h1>
-            <p className="text-sm text-zinc-400 leading-relaxed mb-8 max-w-xs">
-              PinPic maps physical coordinates to check if you are standing at a cinematic reference landmark.
+            <p className="text-sm text-zinc-400 leading-relaxed mb-8">
+              PinPic scans local geography to search for nearby photographic hotspots. We map coordinates to pull live reference stencils.
             </p>
 
             {error && (
-              <div className="flex items-start gap-3 border border-zinc-800 p-4 mb-6 text-xs text-zinc-400">
-                <AlertCircle className="h-4 w-4 text-zinc-500 shrink-0 mt-0.5" />
+              <div className="flex items-start gap-3 border border-red-950/40 bg-red-950/10 p-4 mb-6 text-xs text-red-400 font-mono">
+                <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
             )}
@@ -111,28 +113,28 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
             <Button
               onClick={requestGeolocation}
               disabled={loading}
-              className="w-full bg-white text-black font-medium h-12 rounded-lg hover:bg-zinc-200 transition-colors duration-150 active:scale-[0.98]"
+              className="w-full bg-emerald-500 hover:bg-emerald-600 text-black font-mono font-bold h-14 rounded-none transition-all duration-150 flex items-center justify-center gap-2 tracking-wider"
             >
-              {loading ? 'Requesting…' : 'Allow Location'}
+              {loading ? 'ACQUIRING FIX…' : 'GRANT LOCATION ACCESS'}
+              {!loading && <ArrowRight className="h-4 w-4" />}
             </Button>
           </div>
-        )}
+        ) : (
+          <div className="flex flex-col animate-slide-up">
+            <div className="h-12 w-12 border border-zinc-800 flex items-center justify-center bg-zinc-950 mb-8">
+              <Camera className="h-5 w-5 text-white" />
+            </div>
 
-        {/* ── STEP 2: Camera Access ────────────────────────────────────────── */}
-        {step === 2 && (
-          <div className="flex flex-col">
-            <Camera className="h-6 w-6 text-white mb-8" />
-
-            <h1 className="text-2xl font-bold text-white tracking-tight mb-2">
-              Camera Access
+            <h1 className="text-3xl font-bold tracking-tight text-white mb-4 uppercase font-mono">
+              CAMERA VIEWPORT
             </h1>
-            <p className="text-sm text-zinc-400 leading-relaxed mb-8 max-w-xs">
-              PinPic overlays a composition guide on your camera feed so you can match the reference frame exactly.
+            <p className="text-sm text-zinc-400 leading-relaxed mb-8">
+              Overlay stencils directly onto your camera stream to align framing, angles, and horizon lines with reference images.
             </p>
 
             {error && (
-              <div className="flex items-start gap-3 border border-zinc-800 p-4 mb-6 text-xs text-zinc-400">
-                <AlertCircle className="h-4 w-4 text-zinc-500 shrink-0 mt-0.5" />
+              <div className="flex items-start gap-3 border border-red-950/40 bg-red-950/10 p-4 mb-6 text-xs text-red-400 font-mono">
+                <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
             )}
@@ -140,21 +142,26 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
             <Button
               onClick={requestCamera}
               disabled={loading}
-              className="w-full bg-white text-black font-medium h-12 rounded-lg hover:bg-zinc-200 transition-colors duration-150 active:scale-[0.98]"
+              className="w-full bg-emerald-500 hover:bg-emerald-600 text-black font-mono font-bold h-14 rounded-none transition-all duration-150 flex items-center justify-center gap-2 tracking-wider"
             >
-              {loading ? 'Opening Camera…' : 'Allow Camera'}
+              {loading ? 'INITIALIZING VIEWPORT…' : 'ALLOW CAMERA ACCESS'}
+              {!loading && <ArrowRight className="h-4 w-4" />}
             </Button>
           </div>
         )}
+      </div>
 
-        {/* Skip link */}
+      {/* Bottom Footer Actions */}
+      <div className="flex justify-between items-center w-full border-t border-zinc-900 pt-4">
         <button
           onClick={onClose}
-          className="mt-6 text-xs text-zinc-700 hover:text-zinc-400 transition-colors duration-150 text-left"
+          className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors uppercase tracking-wider"
         >
-          Skip for now
+          Skip onboarding
         </button>
-
+        <span className="text-[9px] font-mono text-zinc-700">
+          PINPIC PWA CORE v1.2
+        </span>
       </div>
     </div>
   );
