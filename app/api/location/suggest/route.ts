@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 export interface SuggestedSpot {
   name:       string;
   type:       string;       // e.g. "viewpoint", "monument", "museum"

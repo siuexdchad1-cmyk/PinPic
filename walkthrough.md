@@ -38,15 +38,31 @@ This walkthrough documents the visual overhaul, user experience advancements, an
 
 ## 🔬 Compilation Status
 
-The refactored application compiles with zero errors.
+## Phase 11 — Real-Time Apify Instagram Ingestion & Production Fixes
 
-```bash
-> npm run build
-...
-✓ Compiled successfully
-   Linting and checking validity of types ...
-   Collecting page data ...
-   Generating static pages (13/13) ...
-   Finalizing page optimization ...
+- Replaced old geofencing and static landmarks search logic with a live web scraping crawler integration inside `app/api/location/search/route.ts`
+- Connected search endpoints securely to Apify's **Instagram Location Scraper** actor using `process.env.APIFY_API_TOKEN` to resolve geographical locations and pull authentic public social media feeds
+- Added type safety declarations for Apify dataset responses (omitting all `any` uses) and structured compatibility returns supporting standard and custom feed states
+- Integrated `export const dynamic = 'force-dynamic'` across dynamic API routes (`/api/hotspots/nearby`, `/api/location/suggest`, and `/api/location/search`) to eliminate Next.js static prerendering timeouts and page generation failures
+
+---
+
+## Build Status
+
 ```
-All routes (`/`, `/login`, `/signup`, `/camera`, `/scrapbook`, `/dashboard`) are optimized and static generation completes successfully.
+✓ Compiled successfully
+✓ Generating static pages (16/16)
+✓ Zero type errors
+```
+
+| Route | Size | First Load JS |
+|---|---|---|
+| `/` | 4.25 kB | 100 kB |
+| `/camera` | 7.12 kB | 113 kB |
+| `/explore` | 2.78 kB | 184 kB |
+| `/dashboard` | 116 kB | 297 kB |
+| `/scrapbook` | 21.6 kB | 203 kB |
+
+---
+
+*PinPic © 2026*
