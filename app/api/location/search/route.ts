@@ -26,7 +26,7 @@ export interface LocationSearchResult {
 // ── Wikimedia Commons Geosearch fetcher ──────────────────────────────────────
 async function fetchWikimediaPhotos(lat: number, lng: number, limit = 8): Promise<string[]> {
   try {
-    const wikiGeosearchUrl = `https://commons.wikimedia.org/w/api.php?action=query&list=geosearch&gsradius=5000&gscoord=${lat}|${lng}&gslimit=${limit}&format=json&origin=*`;
+    const wikiGeosearchUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggsnamespace=6&ggsradius=5000&ggscoord=${lat}|${lng}&ggslimit=${limit}&prop=imageinfo&iiprop=url&format=json&origin=*`;
     const wikiRes = await fetch(wikiGeosearchUrl, {
       headers: { 'User-Agent': 'PinPic/1.0 (support@pinpic.travel)' },
       next: { revalidate: 3600 }
@@ -34,20 +34,8 @@ async function fetchWikimediaPhotos(lat: number, lng: number, limit = 8): Promis
     if (!wikiRes.ok) return [];
 
     const wikiData = await wikiRes.json();
-    const pages = (wikiData.query?.geosearch ?? []) as { pageid: number }[];
-    if (pages.length === 0) return [];
-
-    const pageids = pages.map((p) => p.pageid).join('|');
-    const imgUrlFetch = `https://commons.wikimedia.org/w/api.php?action=query&pageids=${pageids}&prop=imageinfo&iiprop=url&format=json&origin=*`;
-    const imgRes = await fetch(imgUrlFetch, {
-      headers: { 'User-Agent': 'PinPic/1.0 (support@pinpic.travel)' },
-      next: { revalidate: 3600 }
-    });
-    if (!imgRes.ok) return [];
-
-    const imgData = await imgRes.json();
-    const imgPages = Object.values(imgData.query?.pages ?? {}) as { imageinfo?: { url: string }[] }[];
-    return imgPages
+    const pages = Object.values(wikiData.query?.pages ?? {}) as { imageinfo?: { url: string }[] }[];
+    return pages
       .map((p) => p.imageinfo?.[0]?.url)
       .filter((url): url is string => typeof url === 'string' && url.startsWith('http'));
   } catch (err) {

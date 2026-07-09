@@ -11,7 +11,7 @@ We implemented global coverage geosearch write-through caching and strict compos
 ### Features Shipped:
 1. **Multi-Source Geosearch Cache (`app/api/location/search/route.ts`)**:
    - Replaced fragile Apify scraper pipeline.
-   - Primary: **Wikimedia Commons Geosearch** (5km radius).
+   - Primary: **Wikimedia Commons Geosearch** (5km radius). *Fixed bug where querying article pages instead of the File namespace (using `list=geosearch` instead of `generator=geosearch` with `ggsnamespace=6`) returned no image URLs (undefined `imageinfo`), resulting in empty results for all locations other than pre-seeded DB hotspots.*
    - Secondary Fallback: **Flickr API search** using `FLICKR_API_KEY`.
    - **Write-Through Caching**: Checked database hotspots within 25m. If not found, queried Wikimedia/Flickr and cached the best image into `public.hotspots` (bypassing RLS with `createAdminClient`, writing coordinates and `source` fields).
    - **Race Condition Prevention**: Added a secondary validation query to `nearby_hotspots` immediately before inserting to prevent concurrent duplicate rows.
