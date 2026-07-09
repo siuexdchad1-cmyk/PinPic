@@ -330,32 +330,55 @@ export default function CameraPage() {
         {/* ── Search Input & Controls Bar ──────────────────────────────────── */}
         {isStreaming && (
           <div className="absolute top-4 left-4 right-4 z-20 flex flex-col gap-2 pointer-events-auto max-w-md mx-auto w-[calc(100%-2rem)]">
-            {/* Search Input Bar */}
-            <form onSubmit={handleManualSearch} className="flex gap-1.5 w-full">
-              <input
-                type="text"
-                placeholder="Search location manual..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="flex-1 bg-black/85 border border-zinc-900 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500 rounded-none"
-              />
+            {/* Segmented Mode Controller */}
+            <div className="flex w-full bg-black/90 border border-zinc-900 p-0.5 rounded-none shadow-xl">
               <button
-                type="submit"
-                className="bg-white text-black hover:bg-zinc-200 px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-none shrink-0"
+                type="button"
+                onClick={clearManualOverride}
+                className={`flex-1 text-center py-1.5 text-[9px] font-mono uppercase tracking-widest transition-all duration-200 ${
+                  !isManualOverride
+                    ? 'bg-white text-black font-bold'
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
               >
-                Search
+                ● Live GPS Mode
               </button>
-              {isManualOverride && (
+              <button
+                type="button"
+                onClick={() => setIsManualOverride(true)}
+                className={`flex-1 text-center py-1.5 text-[9px] font-mono uppercase tracking-widest transition-all duration-200 ${
+                  isManualOverride
+                    ? 'bg-white text-black font-bold'
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                Manual Mode
+              </button>
+            </div>
+
+            {/* Mode-specific interface details */}
+            {isManualOverride ? (
+              <form onSubmit={handleManualSearch} className="flex gap-1.5 w-full">
+                <input
+                  type="text"
+                  placeholder="Enter location (e.g. Gateway of India)..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="flex-1 bg-black/85 border border-zinc-900 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500 rounded-none"
+                />
                 <button
-                  type="button"
-                  onClick={clearManualOverride}
-                  className="bg-zinc-950 border border-zinc-900 hover:border-zinc-800 text-zinc-400 hover:text-white px-2 py-1.5 text-[10px] font-mono uppercase rounded-none shrink-0"
-                  title="Restore GPS Mode"
+                  type="submit"
+                  className="bg-white text-black hover:bg-zinc-200 px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-none shrink-0"
                 >
-                  GPS Mode
+                  Search
                 </button>
-              )}
-            </form>
+              </form>
+            ) : (
+              <div className="bg-black/85 border border-zinc-900 px-3 py-1.5 text-[9px] font-mono uppercase tracking-wider text-zinc-400 flex items-center justify-between shadow-md">
+                <span>Auto-fetching within 1km radius...</span>
+                <span className="text-[8px] text-emerald-400 animate-pulse font-bold">● ACTIVE</span>
+              </div>
+            )}
 
             {/* Display / opacity sliders (only shown when stencil is loaded) */}
             {selectedPost && (
