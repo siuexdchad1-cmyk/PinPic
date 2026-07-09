@@ -26,7 +26,7 @@ export interface LocationSearchResult {
 // ── Wikimedia Commons Geosearch fetcher ──────────────────────────────────────
 async function fetchWikimediaPhotos(lat: number, lng: number, limit = 8): Promise<string[]> {
   try {
-    const wikiGeosearchUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggsnamespace=6&ggsradius=5000&ggscoord=${lat}|${lng}&ggslimit=${limit}&prop=imageinfo&iiprop=url&format=json&origin=*`;
+    const wikiGeosearchUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggsnamespace=6&ggsradius=1000&ggscoord=${lat}|${lng}&ggslimit=${limit}&prop=imageinfo&iiprop=url&format=json&origin=*`;
     const wikiRes = await fetch(wikiGeosearchUrl, {
       headers: { 'User-Agent': 'PinPic/1.0 (support@pinpic.travel)' },
       next: { revalidate: 3600 }
@@ -53,7 +53,7 @@ async function fetchFlickrPhotos(lat: number, lng: number, limit = 8): Promise<s
   }
 
   try {
-    const url = `https://www.flickr.com/services/rest/?method=flickr.photos.search&api_key=${apiKey}&lat=${lat}&lon=${lng}&radius=5&per_page=${limit}&format=json&nojsoncallback=1&extras=url_c,url_m,url_o`;
+    const url = `https://www.flickr.com/services/rest/?method=flickr.photos.search&api_key=${apiKey}&lat=${lat}&lon=${lng}&radius=1&sort=interestingness-desc&per_page=${limit}&format=json&nojsoncallback=1&extras=url_c,url_m,url_o`;
     const res = await fetch(url, { next: { revalidate: 3600 } });
     if (!res.ok) return [];
 
