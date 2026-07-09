@@ -67,7 +67,7 @@ async function fetchWikimediaPhotos(
   limit = 24
 ): Promise<FetchedPhoto[]> {
   try {
-    const radiusMeters = radiusKm * 1000;
+    const radiusMeters = Math.min(radiusKm * 1000, 10000);
     const wikiGeosearchUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggsnamespace=6&ggsradius=${radiusMeters}&ggscoord=${userLat}|${userLng}&ggslimit=${limit}&prop=imageinfo|coordinates&iiprop=url&format=json&origin=*`;
     const wikiRes = await fetch(wikiGeosearchUrl, {
       headers: { 'User-Agent': 'PinPic/1.0 (support@pinpic.travel)' },
