@@ -23,6 +23,7 @@ export interface Hotspot {
   location: string;
   inspo_image_url: string;
   license_source: string;
+  source?: 'wikimedia' | 'flickr' | 'seed';
   created_at: string;
 }
 
@@ -39,6 +40,7 @@ export interface SavedShot {
   match_accuracy: number | null;
   ai_caption: string | null;
   tags: string[] | null;
+  reference_image_url?: string | null;
   created_at: string;
   /** Joined hotspot data — available when fetched with select('*, hotspots(*)') */
   hotspots?: Pick<Hotspot, 'id' | 'title' | 'description' | 'inspo_image_url'> | null;

@@ -241,7 +241,16 @@ export default function CameraPage() {
         }),
       });
 
-      if (!res.ok) throw new Error('AI analysis processing failed.');
+      if (!res.ok) {
+        let errMsg = 'AI analysis processing failed.';
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) {
+            errMsg = errData.error;
+          }
+        } catch {}
+        throw new Error(errMsg);
+      }
       const data: ProcessShotResponse = await res.json();
       setResult(data);
       setCamState('result');

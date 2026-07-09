@@ -4,9 +4,14 @@ import { createClient } from '@/lib/supabase/server';
 import { Resend } from 'resend';
 import type {
   ProcessShotRequest,
-  GroqVisionResult,
   GroqCaptionResult,
 } from '@/lib/types';
+
+interface GroqVisionResult {
+  score: number;
+  strengths: string[];
+  improvements: string[];
+}
 
 const groq   = new Groq({ apiKey: process.env.GROQ_API_KEY! });
 const resend = new Resend(process.env.RESEND_API_KEY!);
@@ -37,109 +42,101 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── 3. Groq Vision — composition analysis ─────────────────────────────────
-  let visionResult: GroqVisionResult;
+  // ── 2b. Reference photo guard ─────────────────────────────────────────────
+  if (!hotspotImageUrl || hotspotImageUrl.trim() === '' || hotspotImageUrl.toLowerCase().includes('placeholder')) {
+    return NextResponse.json(
+      { error: 'No reference photo available yet for this location' },
+      { status: 400 }
+    );
+  }
 
-  try {
-    const isUniversalMode = !hotspotImageUrl || !hotspotId;
-    const messages = isUniversalMode
-      ? [
-          {
-            role: 'system',
-            content: `You are a professional photography composition analyst.
-Analyze the user's captured photo.
-Evaluate: subject alignment, framing, rule-of-thirds adherence, horizon leveling, and depth.
-Return ONLY valid JSON with this exact schema:
-{
-  "match_accuracy_percentage": <integer 0-100>,
-  "adjustments": [<array of max 3 short actionable text tips>],
-  "composition_notes": "<one sentence summary>"
-}`,
-          },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'User captured image:',
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: imageBase64,
-                  detail: 'low',
-                },
-              },
-            ],
-          },
-        ]
-      : [
-          {
-            role: 'system',
-            content: `You are a professional photography composition analyst.
+  // ── 3. Groq Vision — composition analysis with Retry-Once & JSON mode ─────
+  let visionResult: GroqVisionResult | null = null;
+  let attempts = 0;
+
+  const messages = [
+    {
+      role: 'system',
+      content: `You are a professional photography composition analyst.
 Analyze the user's captured photo against the reference composition image.
-Evaluate: subject alignment, framing, rule-of-thirds adherence, horizon leveling, and depth.
-Return ONLY valid JSON with this exact schema:
+Compare their composition objectively across these dimensions:
+1. Framing: Subject size, borders, crop symmetry.
+2. Subject Position: Rule-of-thirds alignment, placement relative to landmarks.
+3. Horizon Line: Tilt angle, vertical leveling.
+4. Lighting Match: Time of day, contrast, color temperature.
+
+You must explicitly reference these specific visual elements in your feedback. Avoid generic praise or criticism.
+Return ONLY valid JSON matching this schema:
 {
-  "match_accuracy_percentage": <integer 0-100>,
-  "adjustments": [<array of max 3 short actionable text tips>],
-  "composition_notes": "<one sentence summary>"
-}`,
+  "score": <integer 0-100 representing composition alignment accuracy>,
+  "strengths": [<array of 2-3 specific, grounded strengths observed>],
+  "improvements": [<array of 2-3 specific, actionable corrections for framing/alignment>]
+}`
+    },
+    {
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: 'Reference composition image:',
+        },
+        {
+          type: 'image_url',
+          image_url: {
+            url: hotspotImageUrl,
+            detail: 'low',
           },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'Reference composition image:',
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: hotspotImageUrl,
-                  detail: 'low',
-                },
-              },
-              {
-                type: 'text',
-                text: 'User captured image:',
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: imageBase64,
-                  detail: 'low',
-                },
-              },
-            ],
+        },
+        {
+          type: 'text',
+          text: 'User captured image:',
+        },
+        {
+          type: 'image_url',
+          image_url: {
+            url: imageBase64,
+            detail: 'low',
           },
-        ];
+        },
+      ],
+    },
+  ];
 
-    const visionResponse = await groq.chat.completions.create({
-      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      messages: messages as any,
-      max_tokens: 256,
-      temperature: 0.2,
-    });
+  while (attempts < 2 && !visionResult) {
+    attempts++;
+    try {
+      const visionResponse = await groq.chat.completions.create({
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        messages: messages as any,
+        max_tokens: 256,
+        temperature: 0.1,
+        response_format: { type: 'json_object' }
+      });
 
-    const raw = visionResponse.choices[0]?.message?.content ?? '{}';
-    // Extract JSON from the response (model sometimes wraps in markdown)
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    visionResult = jsonMatch
-      ? JSON.parse(jsonMatch[0])
-      : { match_accuracy_percentage: 50, adjustments: [], composition_notes: '' };
-  } catch (err) {
-    console.error('[process-shot] Groq Vision error:', err);
-    // Graceful degradation — return a neutral score instead of failing
+      const raw = visionResponse.choices[0]?.message?.content ?? '{}';
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.score === 'number' && Array.isArray(parsed.strengths) && Array.isArray(parsed.improvements)) {
+        visionResult = parsed as GroqVisionResult;
+      } else {
+        console.warn(`[process-shot] Vision payload missing schema keys on attempt ${attempts}`);
+      }
+    } catch (err) {
+      console.warn(`[process-shot] Groq Vision attempt ${attempts} failed:`, err);
+    }
+  }
+
+  if (!visionResult) {
+    // Graceful degradation fallback
     visionResult = {
-      match_accuracy_percentage: 50,
-      adjustments: ['Could not analyse composition — try again.'],
-      composition_notes: 'AI analysis unavailable.',
+      score: 50,
+      strengths: ['User photo successfully captured.'],
+      improvements: ['Could not analyse composition details — try recapturing.']
     };
   }
 
-  const matchAccuracy = Math.min(100, Math.max(0, Math.round(visionResult.match_accuracy_percentage)));
+  const matchAccuracy = Math.min(100, Math.max(0, Math.round(visionResult.score)));
+  const adjustments = visionResult.improvements;
 
   // ── 4. Groq Text — caption + hashtag synthesis ─────────────────────────────
   let captionResult: GroqCaptionResult;
@@ -162,8 +159,8 @@ Return ONLY valid JSON with this exact schema:
         {
           role: 'user',
           content: `Composition score: ${matchAccuracy}%
-Notes: ${visionResult.composition_notes}
-Adjustments made: ${visionResult.adjustments.join(', ')}
+Strengths: ${visionResult.strengths.join(', ')}
+Adjustments made: ${visionResult.improvements.join(', ')}
 
 Write a travel caption and hashtags for this shot.`,
         },
@@ -186,16 +183,17 @@ Write a travel caption and hashtags for this shot.`,
     };
   }
 
-  // ── 5. Persist to saved_shots ──────────────────────────────────────────────
+  // ── 5. Persist to saved_shots (Logging reference_image_url) ────────────────
   const { data: savedShot, error: insertError } = await supabase
     .from('saved_shots')
     .insert({
       user_id:            user.id,
-      hotspot_id:         hotspotId,
-      captured_image_url: imageBase64, // In production: upload to Supabase Storage first
+      hotspot_id:         hotspotId || null,
+      captured_image_url: imageBase64,
       match_accuracy:     matchAccuracy,
       ai_caption:         captionResult.caption,
       tags:               captionResult.tags,
+      reference_image_url: hotspotImageUrl // Storing actual inspo reference image used
     })
     .select('id')
     .single();
@@ -237,7 +235,6 @@ Write a travel caption and hashtags for this shot.`,
         });
       } catch (emailErr) {
         console.error('[process-shot] Milestone email error:', emailErr);
-        // Non-fatal — shot is already saved
       }
     }
   }
@@ -245,7 +242,7 @@ Write a travel caption and hashtags for this shot.`,
   // ── 7. Return result ───────────────────────────────────────────────────────
   return NextResponse.json({
     matchAccuracy,
-    adjustments:  visionResult.adjustments,
+    adjustments,
     caption:      captionResult.caption,
     tags:         captionResult.tags,
     savedShotId:  savedShot?.id ?? null,
