@@ -12,6 +12,7 @@ export interface SocialPost {
   inspo_image_url: string;
   caption:         string;
   title?:          string;
+  distance?:       number; // Distance in meters
 }
 
 export interface LocationSearchResult {
@@ -23,10 +24,48 @@ export interface LocationSearchResult {
   message?: string;
 }
 
+interface FetchedPhoto {
+  url: string;
+  source: 'wikimedia' | 'flickr';
+  lat: number;
+  lng: number;
+  distance: number; // in meters
+  title?: string;
+  caption?: string;
+}
+
+// ── Haversine formula for distance calculation ──────────────────────────────
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000; // Earth radius in meters
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ── Outdoor keyword exclusion list ──────────────────────────────────────────
+const EXCLUDED_KEYWORDS = [
+  'interior', 'inside', 'indoor', 'museum', 'room', 'ceiling', 'exhibit', 'hotel room', 'indoors', 'lobby', 'exhibition', 'bathroom', 'kitchen', 'bedroom'
+];
+
+function isOutdoorPhoto(photo: FetchedPhoto): boolean {
+  const text = (photo.title + ' ' + (photo.caption || '')).toLowerCase();
+  return !EXCLUDED_KEYWORDS.some((kw) => text.includes(kw));
+}
+
 // ── Wikimedia Commons Geosearch fetcher ──────────────────────────────────────
-async function fetchWikimediaPhotos(lat: number, lng: number, limit = 8): Promise<string[]> {
+async function fetchWikimediaPhotos(
+  userLat: number,
+  userLng: number,
+  radiusKm: number,
+  limit = 24
+): Promise<FetchedPhoto[]> {
   try {
-    const wikiGeosearchUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggsnamespace=6&ggsradius=1000&ggscoord=${lat}|${lng}&ggslimit=${limit}&prop=imageinfo&iiprop=url&format=json&origin=*`;
+    const radiusMeters = radiusKm * 1000;
+    const wikiGeosearchUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggsnamespace=6&ggsradius=${radiusMeters}&ggscoord=${userLat}|${userLng}&ggslimit=${limit}&prop=imageinfo|coordinates&iiprop=url&format=json&origin=*`;
     const wikiRes = await fetch(wikiGeosearchUrl, {
       headers: { 'User-Agent': 'PinPic/1.0 (support@pinpic.travel)' },
       next: { revalidate: 3600 }
@@ -34,10 +73,32 @@ async function fetchWikimediaPhotos(lat: number, lng: number, limit = 8): Promis
     if (!wikiRes.ok) return [];
 
     const wikiData = await wikiRes.json();
-    const pages = Object.values(wikiData.query?.pages ?? {}) as { imageinfo?: { url: string }[] }[];
-    return pages
-      .map((p) => p.imageinfo?.[0]?.url)
-      .filter((url): url is string => typeof url === 'string' && url.startsWith('http'));
+    if (!wikiData.query?.pages) return [];
+    
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pages = Object.values(wikiData.query.pages) as any[];
+    const result: FetchedPhoto[] = [];
+    
+    for (const p of pages) {
+      const url = p.imageinfo?.[0]?.url;
+      const coords = p.coordinates?.[0];
+      if (!url || !url.startsWith('http') || !coords) continue;
+      
+      const photoLat = parseFloat(coords.lat);
+      const photoLng = parseFloat(coords.lon);
+      const distance = haversineDistance(userLat, userLng, photoLat, photoLng);
+      
+      result.push({
+        url,
+        source: 'wikimedia' as const,
+        lat: photoLat,
+        lng: photoLng,
+        distance,
+        title: p.title || ''
+      });
+    }
+    
+    return result;
   } catch (err) {
     console.error('[Wikimedia Fetch Failure]:', err);
     return [];
@@ -45,7 +106,12 @@ async function fetchWikimediaPhotos(lat: number, lng: number, limit = 8): Promis
 }
 
 // ── Flickr Photo Search fetcher ──────────────────────────────────────────────
-async function fetchFlickrPhotos(lat: number, lng: number, limit = 8): Promise<string[]> {
+async function fetchFlickrPhotos(
+  userLat: number,
+  userLng: number,
+  radiusKm: number,
+  limit = 24
+): Promise<FetchedPhoto[]> {
   const apiKey = process.env.FLICKR_API_KEY;
   if (!apiKey) {
     console.warn("Flickr API fallback requested, but FLICKR_API_KEY is unconfigured.");
@@ -53,7 +119,8 @@ async function fetchFlickrPhotos(lat: number, lng: number, limit = 8): Promise<s
   }
 
   try {
-    const url = `https://www.flickr.com/services/rest/?method=flickr.photos.search&api_key=${apiKey}&lat=${lat}&lon=${lng}&radius=1&sort=interestingness-desc&per_page=${limit}&format=json&nojsoncallback=1&extras=url_c,url_m,url_o`;
+    const flickrRadius = Math.min(radiusKm, 32);
+    const url = `https://www.flickr.com/services/rest/?method=flickr.photos.search&api_key=${apiKey}&lat=${userLat}&lon=${userLng}&radius=${flickrRadius}&geo_context=2&sort=interestingness-desc&per_page=${limit}&format=json&nojsoncallback=1&extras=geo,url_c,url_m,url_o`;
     const res = await fetch(url, { next: { revalidate: 3600 } });
     if (!res.ok) return [];
 
@@ -63,10 +130,29 @@ async function fetchFlickrPhotos(lat: number, lng: number, limit = 8): Promise<s
       return [];
     }
 
-    const photosList = (data.photos?.photo ?? []) as { url_c?: string; url_m?: string; url_o?: string }[];
-    return photosList
-      .map((p) => p.url_c || p.url_m || p.url_o)
-      .filter((url): url is string => typeof url === 'string' && url.startsWith('http'));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const photosList = (data.photos?.photo ?? []) as any[];
+    const result: FetchedPhoto[] = [];
+
+    for (const p of photosList) {
+      const url = p.url_c || p.url_m || p.url_o;
+      if (!url || !url.startsWith('http')) continue;
+      
+      const photoLat = parseFloat(p.latitude);
+      const photoLng = parseFloat(p.longitude);
+      const distance = haversineDistance(userLat, userLng, photoLat, photoLng);
+      
+      result.push({
+        url,
+        source: 'flickr' as const,
+        lat: photoLat,
+        lng: photoLng,
+        distance,
+        title: p.title || ''
+      });
+    }
+
+    return result;
   } catch (err) {
     console.error('[Flickr Fetch Failure]:', err);
     return [];
@@ -145,7 +231,8 @@ export async function GET(request: Request) {
         likes_count: Math.floor(Math.random() * 2000) + 300,
         inspo_image_url: h.inspo_image_url,
         caption: h.description || `Seeded hotspot framing guide for ${h.title}.`,
-        title: h.title
+        title: h.title,
+        distance: h.distance_m
       }));
 
       return NextResponse.json({
@@ -157,45 +244,54 @@ export async function GET(request: Request) {
       });
     }
 
-    // Phase 3: Hotspot Cache Miss -> Fetch Fresh Photos on Demand
-    const fetchedUrls: string[] = [];
-    const imageOrigins: ('wikimedia' | 'flickr')[] = [];
+    // Phase 3: Hotspot Cache Miss -> Fetch Fresh Photos on Demand with Progressive Radius Widening
+    const radiusTiers = [5, 25, 50];
+    let allPhotos: FetchedPhoto[] = [];
+    for (const radius of radiusTiers) {
+      
+      const [wikiPhotos, flickrPhotos] = await Promise.all([
+        fetchWikimediaPhotos(latVal, lngVal, radius, 30),
+        fetchFlickrPhotos(latVal, lngVal, radius, 30)
+      ]);
 
-    // 1. Fetch Wikimedia Commons Geosearch
-    const wikiPhotos = await fetchWikimediaPhotos(latVal, lngVal, 8);
-    wikiPhotos.forEach((url) => {
-      if (!fetchedUrls.includes(url)) {
-        fetchedUrls.push(url);
-        imageOrigins.push('wikimedia');
-      }
-    });
+      const combined = [...wikiPhotos, ...flickrPhotos];
+      const uniquePhotos: FetchedPhoto[] = [];
+      const seenUrls = new Set<string>();
 
-    // 2. Fallback to Flickr if Wikimedia returns less than 6 photos
-    if (fetchedUrls.length < 6) {
-      const flickrPhotos = await fetchFlickrPhotos(latVal, lngVal, 8);
-      flickrPhotos.forEach((url) => {
-        if (!fetchedUrls.includes(url)) {
-          fetchedUrls.push(url);
-          imageOrigins.push('flickr');
+      for (const p of combined) {
+        if (!seenUrls.has(p.url)) {
+          seenUrls.add(p.url);
+          uniquePhotos.push(p);
         }
-      });
+      }
+
+      // Apply the keyword exclusion filter at each tier
+      const outdoorPhotos = uniquePhotos.filter(isOutdoorPhoto);
+
+      if (outdoorPhotos.length >= 10) {
+        allPhotos = outdoorPhotos;
+        break; // Stop widening once results are found (at least 10 outdoor photos)
+      } else {
+        allPhotos = outdoorPhotos;
+      }
     }
 
-    // Phase 4: Handle cases where no photos are found
-    if (fetchedUrls.length === 0) {
+    // Phase 4: Handle cases where no outdoor photos are found even after 50km
+    if (allPhotos.length === 0) {
       return NextResponse.json({
         success: true,
         data: [],
         lat: latVal,
         lng: lngVal,
         posts: [],
-        message: "No public photos found here yet. Be the first to capture and save a composition!"
-      });
+        message: "No outdoor inspo photos found near you yet"
+      }, { status: 200 });
     }
 
-    // Phase 5: Write-Through Caching (Create Hotspot Row in DB)
-    const bestPhoto = fetchedUrls[0];
-    const originSource = imageOrigins[0];
+    // Phase 5: Write-Through Caching (Create Hotspot Row in DB using closest photo)
+    const sortedPhotos = [...allPhotos].sort((a, b) => a.distance - b.distance);
+    const bestPhoto = sortedPhotos[0].url;
+    const originSource = sortedPhotos[0].source;
     let cachedHotspotId = `custom_live_${Date.now()}`;
 
     try {
@@ -238,14 +334,15 @@ export async function GET(request: Request) {
     }
 
     // Map fetched photos to standard social posts list
-    const formattedSocialCards: SocialPost[] = fetchedUrls.map((url, index) => ({
-      id: index === 0 ? cachedHotspotId : `live_post_${index}_${Date.now()}`,
+    const formattedSocialCards: SocialPost[] = allPhotos.map((photo, index) => ({
+      id: photo.url === bestPhoto ? cachedHotspotId : `live_post_${index}_${Date.now()}`,
       platform: index % 2 === 0 ? "instagram" as const : "pinterest" as const,
       user_handle: `@pinpic.explorer`,
       likes_count: Math.floor(Math.random() * 3000) + 400,
-      inspo_image_url: url,
+      inspo_image_url: photo.url,
       caption: `Real travel frame discovered at ${shortName}.`,
-      title: shortName
+      title: shortName,
+      distance: photo.distance
     }));
 
     return NextResponse.json({

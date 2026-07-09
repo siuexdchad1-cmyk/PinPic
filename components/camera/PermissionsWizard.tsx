@@ -16,7 +16,7 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
   const [cachedCoords, setCachedCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
   // ── Step 1: Geolocation ──────────────────────────────────────────────────
-  async function requestGeolocation() {
+  function requestGeolocation() {
     setLoading(true);
     setError(null);
 
@@ -35,11 +35,19 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
         setLoading(false);
         setStep(2);
       },
-      () => {
-        setError('Location access was denied. PinPic needs GPS to find landmarks near you.');
+      (errorObj) => {
+        let msg = 'Location access was denied. PinPic needs GPS to find landmarks near you.';
+        if (errorObj.code === errorObj.PERMISSION_DENIED) {
+          msg = 'Permission Denied: Please allow location access in your device settings/browser permissions.';
+        } else if (errorObj.code === errorObj.POSITION_UNAVAILABLE) {
+          msg = 'Position Unavailable: Unable to detect GPS location. Ensure location services are on and you have signal.';
+        } else if (errorObj.code === errorObj.TIMEOUT) {
+          msg = 'Location Timeout: Took too long to acquire GPS signal. Try stepping outdoors or moving to an open area.';
+        }
+        setError(msg);
         setLoading(false);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   }
 

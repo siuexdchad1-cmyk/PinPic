@@ -19,6 +19,8 @@ export default function CameraPage() {
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [result, setResult] = useState<ProcessShotResponse | null>(null);
   const [socialPosts, setSocialPosts] = useState<SocialPost[]>([]);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const [emptyMessage, setEmptyMessage] = useState<string>('No outdoor inspiration photos found near this location yet.');
 
   // ── Reference Stencil & Side-by-Side Visuals ──────────────────────────────
   const [selectedPost, setSelectedPost] = useState<SocialPost | null>(null);
@@ -101,6 +103,9 @@ export default function CameraPage() {
       const data: LocationSearchResult = await res.json();
       if (data && data.posts) {
         setSocialPosts(data.posts);
+        if (data.message) {
+          setEmptyMessage(data.message);
+        }
         if (!selectedPost && data.posts.length > 0) {
           // Preload first post as composition stencil guide
           setSelectedPost(data.posts[0]);
@@ -126,6 +131,9 @@ export default function CameraPage() {
       const data: LocationSearchResult = await res.json();
       if (data && data.posts) {
         setSocialPosts(data.posts);
+        if (data.message) {
+          setEmptyMessage(data.message);
+        }
         if (data.posts.length > 0) {
           setSelectedPost(data.posts[0]);
           toast.success(`Loaded inspiration for: ${searchQuery}`);
@@ -191,6 +199,7 @@ export default function CameraPage() {
       if ('geolocation' in navigator) {
         watchIdRef.current = navigator.geolocation.watchPosition(
           (pos) => {
+            setGpsError(null);
             const coords: GpsCoordinates = {
               latitude: pos.coords.latitude,
               longitude: pos.coords.longitude,
@@ -203,8 +212,17 @@ export default function CameraPage() {
           },
           (err) => {
             console.warn('[GPS Watcher Failure]', err.message);
+            let msg = 'Unable to retrieve GPS coordinates.';
+            if (err.code === err.PERMISSION_DENIED) {
+              msg = 'Permission Denied: Location services blocked.';
+            } else if (err.code === err.POSITION_UNAVAILABLE) {
+              msg = 'Position Unavailable: Weak GPS signal.';
+            } else if (err.code === err.TIMEOUT) {
+              msg = 'Location Timeout: Signal acquisition delay.';
+            }
+            setGpsError(msg);
           },
-          { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
       }
     }
@@ -428,65 +446,91 @@ export default function CameraPage() {
         )}
 
         {/* GPS coordinates & accuracy diagnostics */}
-        {isStreaming && gps && (
-          <div className="absolute bottom-36 left-4 pointer-events-none text-[9px] font-mono text-zinc-500 z-10 flex flex-col gap-0.5">
-            <span>GPS: {gps.latitude.toFixed(5)}, {gps.longitude.toFixed(5)}</span>
-            <span>ACC: ±{Math.round(gps.accuracy)}m</span>
+        {isStreaming && (
+          <div className="absolute bottom-36 left-4 pointer-events-none text-[9px] font-mono z-10 flex flex-col gap-0.5">
+            {gpsError ? (
+              <span className="text-red-400 bg-black/60 px-1 py-0.5 border border-red-950">GPS ERROR: {gpsError}</span>
+            ) : gps ? (
+              <div className="text-zinc-500 flex flex-col">
+                <span>GPS: {gps.latitude.toFixed(5)}, {gps.longitude.toFixed(5)}</span>
+                <span>ACC: ±{Math.round(gps.accuracy)}m</span>
+              </div>
+            ) : (
+              <span className="text-zinc-500 animate-pulse">Acquiring GPS fix…</span>
+            )}
           </div>
         )}
 
         {/* ── Active Live Geolocation Stream Tray ───────────────────────────── */}
-        {isStreaming && socialPosts.length > 0 && (
+        {isStreaming && (
           <div className="absolute bottom-28 left-0 right-0 z-10 pointer-events-auto bg-black/90 border-t border-zinc-900 py-3">
             <div className="flex items-center justify-between px-4 mb-2">
               <span className="text-[9px] font-mono uppercase tracking-widest text-white">
                 ● Live Local Social Stream
               </span>
-              <button
-                onClick={() => setShowSuggestions((v) => !v)}
-                className="text-[9px] font-mono text-zinc-500 hover:text-zinc-300 uppercase"
-              >
-                {showSuggestions ? 'Collapse' : 'Expand'}
-              </button>
+              {socialPosts.length > 0 && (
+                <button
+                  onClick={() => setShowSuggestions((v) => !v)}
+                  className="text-[9px] font-mono text-zinc-500 hover:text-zinc-300 uppercase"
+                >
+                  {showSuggestions ? 'Collapse' : 'Expand'}
+                </button>
+              )}
             </div>
 
-            {showSuggestions && (
-              <div
-                className="flex gap-3 overflow-x-auto px-4 pb-1"
-                style={{ scrollbarWidth: 'none' }}
-              >
-                {socialPosts.map((post) => {
-                  const isSelected = selectedPost?.id === post.id;
-                  return (
-                    <div
-                      key={post.id}
-                      onClick={() => setSelectedPost(post)}
-                      className={`w-[170px] shrink-0 border cursor-pointer bg-black rounded-none overflow-hidden relative group transition-all duration-150
-                        ${isSelected ? 'border-white' : 'border-zinc-900 hover:border-zinc-700'}`}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={post.inspo_image_url}
-                        alt={post.caption}
-                        className="w-full aspect-[3/4] object-cover opacity-80"
-                      />
-
-                      {/* Platform Badges */}
-                      <div className="absolute top-2 right-2 bg-black px-1.5 py-0.5 border border-zinc-900 text-[8px] font-mono uppercase text-zinc-400">
-                        {post.platform}
-                      </div>
-
-                      {/* Card Info */}
-                      <div className="p-2 bg-black border-t border-zinc-900 flex flex-col gap-0.5">
-                        <span className="text-[9px] font-mono text-white truncate">{post.user_handle}</span>
-                        <span className="text-[8px] text-zinc-500 font-mono">
-                          {post.likes_count.toLocaleString()} engagement
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
+            {socialPosts.length === 0 ? (
+              <div className="px-4 py-4 text-center text-[10px] font-mono text-zinc-500 uppercase">
+                {emptyMessage}
+                <br />
+                <span className="text-[8px] text-zinc-600">BE THE FIRST TO CAPTURE A REFERENCE SHOT!</span>
               </div>
+            ) : (
+              showSuggestions && (
+                <div
+                  className="flex gap-3 overflow-x-auto px-4 pb-1"
+                  style={{ scrollbarWidth: 'none' }}
+                >
+                  {socialPosts.map((post) => {
+                    const isSelected = selectedPost?.id === post.id;
+                    const distanceKm = post.distance ? post.distance / 1000 : null;
+                    return (
+                      <div
+                        key={post.id}
+                        onClick={() => setSelectedPost(post)}
+                        className={`w-[170px] shrink-0 border cursor-pointer bg-black rounded-none overflow-hidden relative group transition-all duration-150
+                          ${isSelected ? 'border-white' : 'border-zinc-900 hover:border-zinc-700'}`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={post.inspo_image_url}
+                          alt={post.caption}
+                          className="w-full aspect-[3/4] object-cover opacity-80"
+                        />
+
+                        {/* Platform Badges */}
+                        <div className="absolute top-2 right-2 bg-black px-1.5 py-0.5 border border-zinc-900 text-[8px] font-mono uppercase text-zinc-400">
+                          {post.platform}
+                        </div>
+
+                        {/* Distance Badge */}
+                        {distanceKm !== null && distanceKm > 0.1 && (
+                          <div className="absolute bottom-2 left-2 bg-black/80 px-1 py-0.5 border border-zinc-900 text-[8px] font-mono text-zinc-300">
+                            {distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m` : `~${distanceKm.toFixed(1)}km`} away
+                          </div>
+                        )}
+
+                        {/* Card Info */}
+                        <div className="p-2 bg-black border-t border-zinc-900 flex flex-col gap-0.5">
+                          <span className="text-[9px] font-mono text-white truncate">{post.user_handle}</span>
+                          <span className="text-[8px] text-zinc-500 font-mono">
+                            {post.likes_count.toLocaleString()} engagement
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
             )}
           </div>
         )}

@@ -1,10 +1,21 @@
-/** @type {import('next').NextConfig} */
 const withPWA = require('next-pwa')({
   dest: 'public',
   register: true,
   skipWaiting: true,
+  clientsClaim: true,
   disable: process.env.NODE_ENV === 'development',
   runtimeCaching: [
+    {
+      urlPattern: ({ request }) => request.mode === 'navigate',
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'html-pages',
+        expiration: {
+          maxEntries: 10,
+          maxAgeSeconds: 24 * 60 * 60, // 24 hours
+        },
+      },
+    },
     {
       urlPattern: /^https:\/\/images\.unsplash\.com\/.*/i,
       handler: 'CacheFirst',
