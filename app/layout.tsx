@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { Toaster } from 'sonner';
+import TargetCursor from '@/components/ui/TargetCursor';
 import './globals.css';
 
 const inter = Inter({
@@ -81,6 +82,14 @@ export default function RootLayout({
         />
       </head>
       <body className={`${inter.variable} font-sans bg-black text-white antialiased`}>
+        <TargetCursor
+          targetSelector="button, a, .cursor-target"
+          spinDuration={3}
+          hideDefaultCursor={false}
+          parallaxOn={true}
+          cursorColor="#10b981"
+          cursorColorOnTarget="#34d399"
+        />
         {children}
         <Toaster
           theme="dark"
