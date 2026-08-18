@@ -1,385 +1,206 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { MapPin } from 'lucide-react';
+import { Camera, Compass, Sparkles, ArrowRight, BookImage } from 'lucide-react';
 import SplitText from '@/components/ui/SplitText';
 
-// ── Minimal Rule-of-Thirds composition canvas ─────────────────────────────
-function CompositionCanvas() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const parent = canvas.parentElement;
-    if (!parent) return;
-
-    const draw = () => {
-      const w = parent.offsetWidth;
-      const h = parent.offsetHeight;
-      canvas.width  = w;
-      canvas.height = h;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      ctx.clearRect(0, 0, w, h);
-
-      // Rule of thirds grid — crisp 1px white lines
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-      ctx.lineWidth   = 1;
-
-      // Vertical thirds
-      [w / 3, (2 * w) / 3].forEach((x) => {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, h);
-        ctx.stroke();
-      });
-
-      // Horizontal thirds
-      [h / 3, (2 * h) / 3].forEach((y) => {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(w, y);
-        ctx.stroke();
-      });
-
-      // Corner bracket guides — stronger white
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-      const arm = Math.min(w, h) * 0.1;
-      const pad = 16;
-
-      // Top-left
-      ctx.beginPath(); ctx.moveTo(pad, pad + arm); ctx.lineTo(pad, pad); ctx.lineTo(pad + arm, pad); ctx.stroke();
-      // Top-right
-      ctx.beginPath(); ctx.moveTo(w - pad - arm, pad); ctx.lineTo(w - pad, pad); ctx.lineTo(w - pad, pad + arm); ctx.stroke();
-      // Bottom-left
-      ctx.beginPath(); ctx.moveTo(pad, h - pad - arm); ctx.lineTo(pad, h - pad); ctx.lineTo(pad + arm, h - pad); ctx.stroke();
-      // Bottom-right
-      ctx.beginPath(); ctx.moveTo(w - pad - arm, h - pad); ctx.lineTo(w - pad, h - pad); ctx.lineTo(w - pad, h - pad - arm); ctx.stroke();
-
-      // Center crosshair
-      const cx = w / 2;
-      const cy = h / 2;
-      const ca = 8;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-      ctx.beginPath();
-      ctx.moveTo(cx - ca, cy); ctx.lineTo(cx + ca, cy);
-      ctx.moveTo(cx, cy - ca); ctx.lineTo(cx, cy + ca);
-      ctx.stroke();
-
-      // Horizon line (lower third emphasis)
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-      ctx.lineWidth = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(0, h * 0.62);
-      ctx.lineTo(w, h * 0.62);
-      ctx.stroke();
-    };
-
-    draw();
-    const ro = new ResizeObserver(draw);
-    ro.observe(parent);
-    return () => ro.disconnect();
-  }, []);
-
-  return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />;
-}
-
-// ── Feature row item ───────────────────────────────────────────────────────
-interface FeatureRowProps {
-  index: string;
-  label: string;
-  value: string;
-}
-
-function FeatureRow({ index, label, value }: FeatureRowProps) {
-  return (
-    <div className="flex items-center justify-between border-b border-zinc-900 py-4 group">
-      <div className="flex items-center gap-6">
-        <span className="text-[10px] font-mono tabular-nums text-zinc-700 w-6 select-none">{index}</span>
-        <span className="text-sm text-zinc-400 group-hover:text-white transition-colors duration-150">{label}</span>
-      </div>
-      <span className="text-xs font-mono tabular-nums text-zinc-600">{value}</span>
-    </div>
-  );
-}
-
-// ── Stat block ─────────────────────────────────────────────────────────────
-interface StatProps {
-  number: string;
-  unit: string;
-  label: string;
-}
-
-function Stat({ number, unit, label }: StatProps) {
-  return (
-    <div className="border-r border-zinc-900 last:border-r-0 pr-8 last:pr-0">
-      <div className="flex items-baseline gap-1 mb-1">
-        <span className="text-3xl font-black tabular-nums tracking-tighter text-white">{number}</span>
-        <span className="text-sm font-mono text-zinc-500">{unit}</span>
-      </div>
-      <p className="text-[10px] font-mono uppercase tracking-widest text-zinc-600">{label}</p>
-    </div>
-  );
-}
-
-// ── Main page export ───────────────────────────────────────────────────────
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-black text-white overflow-x-hidden">
+    <div className="min-h-screen bg-black text-white overflow-x-hidden font-sans selection:bg-emerald-500 selection:text-black">
 
-      {/* ── Navbar ──────────────────────────────────────────────────────── */}
-      <header className="border-b border-zinc-900 sticky top-0 z-50 bg-black">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-          <Link href="/" className="flex items-center gap-2">
-            <MapPin className="h-4 w-4 text-emerald-500" strokeWidth={2.5} />
+      {/* ── Floating Luxury Header ────────────────────────────────────────────── */}
+      <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-black/50 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+          
+          {/* Brand Logo */}
+          <Link href="/" className="flex items-center gap-2.5">
+            <span className="text-emerald-400 font-bold text-lg font-mono">✳</span>
             <SplitText
               text="PinPic"
-              className="text-sm font-semibold tracking-tight font-mono text-white"
-              delay={70}
-              duration={0.7}
+              className="text-base font-bold tracking-tight font-mono text-white"
+              delay={60}
+              duration={0.6}
               splitType="chars"
               from={{ opacity: 0, y: -10 }}
               to={{ opacity: 1, y: 0 }}
             />
           </Link>
 
+          {/* Navigation Links */}
           <div className="hidden md:flex items-center gap-8 font-mono text-xs uppercase tracking-widest">
-            <a href="#features" className="text-zinc-400 hover:text-white transition-colors">
+            <a href="#features" className="text-zinc-300 hover:text-white transition-colors">
               Features
             </a>
-            <Link href="/explore" className="text-zinc-400 hover:text-white transition-colors">
+            <Link href="/explore" className="text-zinc-300 hover:text-white transition-colors">
               Map
             </Link>
-            <Link href="/camera" className="text-zinc-400 hover:text-white transition-colors">
+            <Link href="/camera" className="text-zinc-300 hover:text-white transition-colors">
               Camera
             </Link>
-            <Link href="/scrapbook" className="text-zinc-400 hover:text-white transition-colors">
+            <Link href="/scrapbook" className="text-zinc-300 hover:text-white transition-colors">
               Scrapbook
             </Link>
           </div>
 
-          <nav className="flex items-center gap-3">
+          {/* Right Action Button */}
+          <div className="flex items-center gap-4">
             <Link
               href="/login"
-              className="text-xs font-mono text-zinc-400 hover:text-white transition-colors duration-150 tracking-wide"
+              className="hidden sm:inline text-xs font-mono text-zinc-300 hover:text-white transition-colors tracking-wide"
             >
               Sign in
             </Link>
             <Link href="/camera">
-              <button className="bg-white text-black font-medium text-xs px-4 h-8 rounded-md hover:bg-zinc-200 transition-all duration-150 active:scale-[0.99] tracking-tight">
-                Get started
+              <button className="bg-white/10 hover:bg-white/20 border border-white/20 text-white font-mono font-bold text-xs px-4 py-2 rounded-full backdrop-blur-md transition-all active:scale-95">
+                Explore
               </button>
             </Link>
-          </nav>
+          </div>
         </div>
       </header>
 
-      {/* ── Hero ────────────────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-6xl px-6 pt-20 pb-24 lg:pt-32 lg:pb-40">
-        <div className="flex flex-col lg:flex-row items-start gap-16 lg:gap-24">
+      {/* ── Cinematic Panoramic Hero ────────────────────────────────────────── */}
+      <section className="relative w-full h-screen min-h-[650px] flex flex-col justify-between items-center text-center overflow-hidden">
+        
+        {/* Background Panoramic Image */}
+        <div className="absolute inset-0 z-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=2070&auto=format&fit=crop"
+            alt="Panoramic Mountain Landscape"
+            className="w-full h-full object-cover object-center scale-105 animate-pulse-slow"
+          />
+          {/* Dark Overlay Gradient */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-black/30" />
+        </div>
 
-          {/* Left: Type block */}
-          <div className="flex-1 min-w-0 pt-2">
+        {/* Hero Central Typography (Vita Travels Style) */}
+        <div className="relative z-10 mx-auto max-w-4xl px-6 pt-36 sm:pt-48 flex flex-col items-center">
+          
+          <h1 className="text-7xl sm:text-9xl md:text-[11rem] font-extrabold tracking-tighter text-white uppercase leading-none font-sans drop-shadow-2xl">
+            Travel
+          </h1>
 
-            {/* System tag */}
-            <div className="flex items-center gap-3 mb-10">
-              <div className="h-px w-8 bg-zinc-700" />
-              <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-zinc-600">
-                Composition Intelligence — v2.1
-              </span>
+          <p className="mt-4 sm:mt-6 text-sm sm:text-xl font-mono text-zinc-200 font-medium max-w-xl leading-relaxed drop-shadow-md">
+            With purpose. AI &amp; GPS guided photography. Discover hotspots, align framing, and save memories in one place.
+          </p>
+
+          {/* Central Pill Action Button */}
+          <div className="mt-8 sm:mt-12">
+            <Link href="/explore">
+              <button className="bg-white text-black font-mono font-bold text-xs uppercase tracking-widest px-8 py-3.5 rounded-full shadow-2xl hover:bg-zinc-200 transition-all duration-200 active:scale-95 flex items-center gap-2.5 border border-white">
+                Explore Hotspots
+                <span className="text-emerald-600">✳</span>
+              </button>
+            </Link>
+          </div>
+        </div>
+
+        {/* Bottom Banner Bar */}
+        <div className="relative z-10 w-full border-t border-white/10 bg-black/40 backdrop-blur-md py-4 px-6">
+          <div className="mx-auto max-w-6xl flex flex-col sm:flex-row items-center justify-between gap-3 text-[10px] font-mono text-zinc-400 uppercase tracking-widest">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+              <span>PINPIC — AI &amp; GPS GUIDED PHOTOGRAPHY PWA</span>
             </div>
+            <div className="flex items-center gap-6">
+              <span>MAJOR DIPLOMA PROJECT BY ARYA HEMANT TARE</span>
+              <span className="hidden md:inline text-emerald-400">● GPS LOCKED</span>
+            </div>
+          </div>
+        </div>
+      </section>
 
-            {/* Headline */}
-            <h1 className="text-6xl md:text-8xl font-harmond text-white leading-[0.9] mb-10">
-              Travel.<br />
-              Compose.<br />
-              Perfect.
-            </h1>
-
-            {/* Description */}
-            <p className="text-base text-zinc-500 leading-relaxed max-w-sm mb-12">
-              Step into a GPS hotspot anywhere on Earth. A live composition wireframe overlays your camera, aligning your shot to a professional reference frame in real-time.
+      {/* ── Feature Cards Section ───────────────────────────────────────────── */}
+      <section id="features" className="py-24 bg-zinc-950 border-t border-zinc-900 scroll-mt-16">
+        <div className="mx-auto max-w-6xl px-6">
+          
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-16">
+            <div>
+              <span className="text-[10px] font-mono text-emerald-400 font-bold uppercase tracking-widest block mb-2">
+                ● SYSTEM CAPABILITIES
+              </span>
+              <h2 className="text-3xl sm:text-5xl font-black font-mono uppercase text-white tracking-tight">
+                Designed for Travelers
+              </h2>
+            </div>
+            <p className="text-xs font-mono text-zinc-400 max-w-xs leading-relaxed">
+              Step into any photography hotspot, align composition stencils, and capture stunning travel photos.
             </p>
-
-            {/* CTAs */}
-            <div className="flex flex-col sm:flex-row gap-3 mb-16">
-              <Link href="/signup" className="flex-1 sm:flex-none">
-                <button className="w-full sm:w-auto bg-white text-black font-medium h-14 px-8 rounded-md hover:bg-zinc-200 transition-all duration-150 active:scale-[0.99] text-sm tracking-tight">
-                  Start for free
-                </button>
-              </Link>
-              <Link href="/explore" className="flex-1 sm:flex-none">
-                <button className="w-full sm:w-auto bg-transparent border border-zinc-800 text-white font-medium h-14 px-8 rounded-md hover:border-zinc-600 hover:bg-zinc-950 transition-all duration-150 active:scale-[0.99] text-sm tracking-tight">
-                  Explore map
-                </button>
-              </Link>
-            </div>
-
-            {/* Stats bar */}
-            <div className="border-t border-zinc-900 pt-8 flex gap-8">
-              <Stat number="140+" unit="spots" label="Mapped globally" />
-              <Stat number="AI" unit="score" label="Composition grader" />
-              <Stat number="PWA" unit="app" label="Offline ready" />
-            </div>
           </div>
 
-          {/* Right: Phone mockup */}
-          <div className="w-full lg:w-auto flex flex-col items-center lg:items-end gap-6 shrink-0">
-
-            {/* Phone frame */}
-            <div className="border border-zinc-900 bg-black overflow-hidden relative max-w-[280px] w-full aspect-[9/19] rounded-[2rem] shadow-2xl">
-
-              {/* Status bar */}
-              <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-5 pt-4 z-20">
-                <span className="text-[9px] font-mono tabular-nums text-zinc-600">9:41</span>
-                <div className="w-16 h-4 bg-black rounded-full border border-zinc-900 mx-auto absolute left-1/2 -translate-x-1/2 top-2" />
-                <div className="flex items-center gap-1">
-                  <div className="w-3 h-1.5 rounded-sm border border-zinc-700 relative">
-                    <div className="absolute inset-[1px] bg-white rounded-[1px]" />
-                  </div>
+          {/* 3-Column Feature Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            <div className="border border-zinc-800 bg-zinc-900/60 p-8 rounded-2xl flex flex-col justify-between hover:border-emerald-500/50 transition-colors group">
+              <div>
+                <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-6">
+                  <Compass className="h-5 w-5" />
                 </div>
+                <h3 className="text-lg font-bold font-mono text-white uppercase mb-2">GPS Proximity Hotspots</h3>
+                <p className="text-xs text-zinc-400 leading-relaxed font-mono">
+                  Detects real-world monuments, viewpoints, and scenic spots within 1–2 km automatically using OpenStreetMap.
+                </p>
               </div>
-
-              {/* HUD bar */}
-              <div className="absolute top-8 left-0 right-0 z-20 px-4 pt-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[8px] font-mono uppercase tracking-widest text-zinc-600">● REC</span>
-                  <span className="text-[8px] font-mono tabular-nums text-zinc-600">GPS LOCKED</span>
-                  <span className="text-[8px] font-mono text-zinc-600">AI</span>
-                </div>
-              </div>
-
-              {/* Canvas composition overlay */}
-              <CompositionCanvas />
-
-              {/* Bottom HUD bar */}
-              <div className="absolute bottom-0 left-0 right-0 z-20 border-t border-zinc-900 bg-black/90 px-4 py-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[8px] font-mono uppercase tracking-widest text-zinc-600">Score</span>
-                  <span className="text-[8px] font-mono tabular-nums text-white">94%</span>
-                </div>
-                <div className="h-px bg-zinc-900 w-full relative overflow-hidden">
-                  <div className="absolute inset-y-0 left-0 bg-white" style={{ width: '94%' }} />
-                </div>
-                <p className="text-[7px] font-mono text-zinc-700 mt-2 uppercase tracking-widest">Align left shoulder +2°</p>
+              <div className="mt-8 pt-4 border-t border-zinc-800 flex items-center justify-between text-[9px] font-mono text-zinc-500 uppercase">
+                <span>±5m Precision</span>
+                <ArrowRight className="h-3.5 w-3.5 group-hover:text-emerald-400 transition-colors" />
               </div>
             </div>
 
-            {/* Side annotation */}
-            <div className="flex items-start gap-3 max-w-[280px] w-full">
-              <div className="h-px w-4 bg-zinc-700 mt-2 shrink-0" />
-              <p className="text-[10px] font-mono text-zinc-600 leading-relaxed">
-                Live AI composition scoring and pose alignment — processed entirely on-device via TensorFlow.js.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Feature Index ───────────────────────────────────────────────── */}
-      <section id="features" className="border-t border-zinc-900 scroll-mt-20">
-        <div className="mx-auto max-w-6xl px-6 py-20">
-
-          <div className="flex items-center gap-6 mb-12">
-            <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-zinc-600">System capabilities</span>
-            <div className="h-px flex-1 bg-zinc-900" />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-16">
-            <div>
-              <FeatureRow index="01" label="GPS Geofencing"        value="±5m precision" />
-              <FeatureRow index="02" label="AI Composition Scoring" value="Groq Llama 4" />
-              <FeatureRow index="03" label="Live Pose Guide"        value="PoseNet v2.2" />
-              <FeatureRow index="04" label="Worldwide Geocoding"    value="OpenStreetMap" />
-            </div>
-            <div>
-              <FeatureRow index="05" label="Community Photo Feed"   value="Instagram Scraper" />
-              <FeatureRow index="06" label="Shot Scrapbook"         value="Supabase Cloud" />
-              <FeatureRow index="07" label="Global Hotspot Map"     value="Leaflet + CartoDB" />
-              <FeatureRow index="08" label="Offline PWA"            value="Service Worker" />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Three-column Proposition ─────────────────────────────────────── */}
-      <section className="border-t border-zinc-900">
-        <div className="mx-auto max-w-6xl">
-          <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-zinc-900">
-
-            {([
-              {
-                tag: 'Step 01',
-                title: 'Arrive.',
-                body: 'PinPic detects your GPS coordinates and instantly matches you to the nearest community-mapped hotspot within 15 metres.',
-              },
-              {
-                tag: 'Step 02',
-                title: 'Frame.',
-                body: 'A precise composition wireframe overlays your live camera stream. The AI Pose Guide tracks your joints and scores alignment in real-time.',
-              },
-              {
-                tag: 'Step 03',
-                title: 'Capture.',
-                body: 'Shoot. Groq Vision scores your composition, generates a caption, and saves the result to your personal scrapbook.',
-              },
-            ] as { tag: string; title: string; body: string }[]).map((step) => (
-              <div key={step.tag} className="px-8 py-12">
-                <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-700 block mb-6">{step.tag}</span>
-                <h3 className="text-3xl font-black tracking-tighter text-white uppercase mb-4">{step.title}</h3>
-                <p className="text-sm text-zinc-500 leading-relaxed">{step.body}</p>
+            <div className="border border-zinc-800 bg-zinc-900/60 p-8 rounded-2xl flex flex-col justify-between hover:border-emerald-500/50 transition-colors group">
+              <div>
+                <div className="h-10 w-10 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 mb-6">
+                  <Camera className="h-5 w-5" />
+                </div>
+                <h3 className="text-lg font-bold font-mono text-white uppercase mb-2">Groq AI Vision Scan</h3>
+                <p className="text-xs text-zinc-400 leading-relaxed font-mono">
+                  Captures photos and analyzes composition quality, subject lighting, social media captions, and trending hashtags.
+                </p>
               </div>
-            ))}
+              <div className="mt-8 pt-4 border-t border-zinc-800 flex items-center justify-between text-[9px] font-mono text-zinc-500 uppercase">
+                <span>Llama 4 Vision</span>
+                <ArrowRight className="h-3.5 w-3.5 group-hover:text-indigo-400 transition-colors" />
+              </div>
+            </div>
+
+            <div className="border border-zinc-800 bg-zinc-900/60 p-8 rounded-2xl flex flex-col justify-between hover:border-emerald-500/50 transition-colors group">
+              <div>
+                <div className="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-6">
+                  <BookImage className="h-5 w-5" />
+                </div>
+                <h3 className="text-lg font-bold font-mono text-white uppercase mb-2">Digital Scrapbook</h3>
+                <p className="text-xs text-zinc-400 leading-relaxed font-mono">
+                  Save all your travel shots with AI scorecards, location tags, and categories stored safely in local memory.
+                </p>
+              </div>
+              <div className="mt-8 pt-4 border-t border-zinc-800 flex items-center justify-between text-[9px] font-mono text-zinc-500 uppercase">
+                <span>LocalStorage CRUD</span>
+                <ArrowRight className="h-3.5 w-3.5 group-hover:text-amber-400 transition-colors" />
+              </div>
+            </div>
+
           </div>
+
         </div>
       </section>
 
-      {/* ── Full-width CTA ───────────────────────────────────────────────── */}
-      <section className="border-t border-zinc-900">
-        <div className="mx-auto max-w-6xl px-6 py-24 flex flex-col md:flex-row items-start md:items-end justify-between gap-10">
-
-          <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-zinc-700 mb-6">Ready to shoot?</p>
-            <h2 className="text-5xl md:text-7xl font-black tracking-tighter text-white uppercase leading-[0.9]">
-              Open the<br />camera.
-            </h2>
-          </div>
-
-          <div className="flex flex-col gap-3 w-full md:w-auto min-w-[220px]">
-            <Link href="/signup">
-              <button className="w-full bg-white text-black font-medium h-14 rounded-md hover:bg-zinc-200 transition-all duration-150 active:scale-[0.99] text-sm tracking-tight">
-                Create free account
-              </button>
-            </Link>
-            <Link href="/login">
-              <button className="w-full bg-transparent border border-zinc-800 text-zinc-400 font-medium h-14 rounded-md hover:border-zinc-600 hover:text-white transition-all duration-150 active:scale-[0.99] text-sm tracking-tight">
-                Sign in
-              </button>
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Footer ──────────────────────────────────────────────────────── */}
-      <footer className="border-t border-zinc-900">
-        <div className="mx-auto max-w-6xl px-6 py-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      {/* ── Footer ──────────────────────────────────────────────────────────── */}
+      <footer className="border-t border-zinc-900 bg-black py-10">
+        <div className="mx-auto max-w-6xl px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <MapPin className="h-3 w-3 text-zinc-700" strokeWidth={2.5} />
-            <span className="text-[10px] font-mono text-zinc-700 tracking-wider">PINPIC</span>
+            <span className="text-emerald-400 font-mono font-bold">✳</span>
+            <span className="text-xs font-mono font-bold tracking-wider text-white">PINPIC</span>
           </div>
-          <div className="flex items-center gap-6">
-            {['Privacy', 'Terms', 'GitHub'].map((item) => (
-              <span key={item} className="text-[10px] font-mono text-zinc-700 hover:text-zinc-400 transition-colors cursor-pointer tracking-wider">
-                {item}
-              </span>
-            ))}
+          <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
+            PinPic &copy; {new Date().getFullYear()} · Major Diploma Project by Arya Hemant Tare
+          </p>
+          <div className="flex items-center gap-4 text-[10px] font-mono text-zinc-400">
+            <Link href="/explore" className="hover:text-white transition-colors">Map</Link>
+            <Link href="/camera" className="hover:text-white transition-colors">Camera</Link>
+            <Link href="/scrapbook" className="hover:text-white transition-colors">Scrapbook</Link>
+            <Link href="/account" className="hover:text-white transition-colors">Account</Link>
           </div>
-          <span className="text-[10px] font-mono tabular-nums text-zinc-800">© 2026 PinPic</span>
         </div>
       </footer>
 
