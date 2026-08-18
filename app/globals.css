@@ -9,6 +9,27 @@
           on camera/mobile viewports
    ============================================================ */
 
+/* --- Satoshi Local Font Family ------------------------------- */
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/satoshi/Satoshi-Variable.woff2') format('woff2'),
+       url('/fonts/satoshi/Satoshi-Variable.woff') format('woff'),
+       url('/fonts/satoshi/Satoshi-Variable.ttf') format('truetype');
+  font-weight: 300 900;
+  font-display: swap;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/satoshi/Satoshi-VariableItalic.woff2') format('woff2'),
+       url('/fonts/satoshi/Satoshi-VariableItalic.woff') format('woff'),
+       url('/fonts/satoshi/Satoshi-VariableItalic.ttf') format('truetype');
+  font-weight: 300 900;
+  font-display: swap;
+  font-style: italic;
+}
+
 /* --- CSS Custom Properties ---------------------------------- */
 :root {
   --bg:          #000000;
@@ -19,7 +40,7 @@
   --border:      #27272a;
   --muted:       #71717a;
   --card-bg:     #0a0a0a;
-  --font-sans:   'Inter', system-ui, -apple-system, sans-serif;
+  --font-sans:   'Satoshi', 'Inter', system-ui, -apple-system, sans-serif;
   --font-harmond: 'Playfair Display', 'Cinzel Decorative', Georgia, serif;
 }
 
