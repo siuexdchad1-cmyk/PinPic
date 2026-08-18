@@ -11,25 +11,24 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: 'PinPic — AI Travel Photography PWA by Arya Tare',
+    default: 'PinPic — AI & GPS Guided Photography',
     template: '%s | PinPic',
   },
   description:
-    'PinPic is a major diploma project by Arya Tare — an AI and GPS-guided travel photography Progressive Web App. Step into a GPS hotspot anywhere on Earth, align with the AI wireframe overlay, and capture a perfectly composed travel photo every time.',
+    'PinPic is a major diploma project by Arya Hemant Tare — an AI & GPS-guided travel photography Progressive Web App. Step into a GPS hotspot, align with the AI wireframe overlay, and capture a perfectly composed travel photo every time.',
   keywords: [
     'travel photography',
-    'composition guide',
+    'AI composition guide',
     'GPS photo app',
-    'AI camera',
-    'travel app',
-    'photo composition',
+    'golden hour calculator',
+    'rule of thirds',
     'PinPic',
-    'Arya Tare',
+    'Arya Hemant Tare',
     'diploma project',
     'PWA',
   ],
-  authors: [{ name: 'Arya Tare' }],
-  creator: 'Arya Tare',
+  authors: [{ name: 'Arya Hemant Tare' }],
+  creator: 'Arya Hemant Tare',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
@@ -40,9 +39,9 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     siteName: 'PinPic',
-    title: 'PinPic — AI Travel Photography PWA | Diploma Project by Arya Tare',
+    title: 'PinPic — AI & GPS Guided Photography | Diploma Project',
     description:
-      'AI-guided composition matching for travelers. Step in, align, shoot. Built by Arya Tare.',
+      'AI-guided composition matching for travelers. Step in, align, shoot. Built by Arya Hemant Tare.',
   },
 };
 

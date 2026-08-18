@@ -64,6 +64,21 @@ const nextConfig = {
         hostname: '*.supabase.co',
         pathname: '/storage/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'upload.wikimedia.org',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.wikimedia.org',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'commons.wikimedia.org',
+        pathname: '/**',
+      },
     ],
     formats: ['image/avif', 'image/webp'],
     deviceSizes: [390, 640, 828, 1080],

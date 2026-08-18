@@ -1,303 +1,265 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Image from 'next/image';
-import { Camera, Trash2, Pencil, BookImage } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { Camera, Trash2, BookImage, Filter, SortAsc, Star, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { formatDate } from '@/lib/utils';
-import { createClient } from '@/lib/supabase/client';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-  DialogDescription, DialogFooter,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import NavBar from '@/components/shared/NavBar';
-import type { SavedShot } from '@/lib/types';
+import Footer from '@/components/shared/Footer';
 
+// ── Types ──────────────────────────────────────────────────────────────────────
+interface LocalEntry {
+  id:        string;
+  imageData: string;
+  hotspot:   string;
+  category:  string;
+  score:     string;
+  tip:       string;
+  savedAt:   string;
+}
+
+// ── Category Config ────────────────────────────────────────────────────────────
+const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
+  'Golden Hour Viewpoint': { label: '🌅 Golden Hour',  color: '#f59e0b' },
+  'Portrait Spot':         { label: '🧍 Portrait',     color: '#10b981' },
+  'Architecture Angle':   { label: '🏛️ Architecture', color: '#6366f1' },
+  'Nature Shot':           { label: '🌿 Nature',       color: '#22c55e' },
+};
+
+function getCategoryStyle(cat: string) {
+  return CATEGORY_LABELS[cat] ?? { label: cat || 'General', color: '#71717a' };
+}
+
+// ── LocalStorage helpers ───────────────────────────────────────────────────────
+function loadLocal(): LocalEntry[] {
+  try { return JSON.parse(localStorage.getItem('pinpic_scrapbook') ?? '[]'); }
+  catch { return []; }
+}
+
+function deleteLocal(id: string): LocalEntry[] {
+  const next = loadLocal().filter(e => e.id !== id);
+  localStorage.setItem('pinpic_scrapbook', JSON.stringify(next));
+  return next;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 export default function ScrapbookPage() {
-  const supabase = createClient();
-  const [shots,   setShots]   = useState<SavedShot[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [entries,    setEntries]    = useState<LocalEntry[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [filter,     setFilter]     = useState<string>('all');
+  const [sortBy,     setSortBy]     = useState<'date' | 'score'>('date');
 
-  // Edit state
-  const [editShot,    setEditShot]    = useState<SavedShot | null>(null);
-  const [editCaption, setEditCaption] = useState('');
-  const [editTags,    setEditTags]    = useState('');
-  const [saving,      setSaving]      = useState(false);
-
-  // Delete state
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [deleting,     setDeleting]     = useState(false);
-
-  // ── Fetch shots ───────────────────────────────────────────────────────────
+  // Load entries — LocalStorage first, then Supabase as bonus
   useEffect(() => {
-    async function fetchShots() {
-      const { data, error } = await supabase
-        .from('saved_shots')
-        .select('*, hotspots(id, title, description, inspo_image_url)')
-        .order('created_at', { ascending: false });
+    const local = loadLocal();
+    setEntries(local);
+    setLoading(false);
 
-      if (error) {
-        toast.error('Could not load your scrapbook.');
-      } else {
-        setShots((data as SavedShot[]) ?? []);
-      }
-      setLoading(false);
-    }
-    fetchShots();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Also try to merge in Supabase entries (non-blocking)
+    // We keep LocalStorage as the single source of truth for this diploma project
   }, []);
 
-  // ── Open edit drawer ──────────────────────────────────────────────────────
-  function openEdit(shot: SavedShot) {
-    setEditShot(shot);
-    setEditCaption(shot.ai_caption ?? '');
-    setEditTags((shot.tags ?? []).join(', '));
-  }
+  // ── Delete handler ──────────────────────────────────────────────────────────
+  const handleDelete = useCallback((id: string) => {
+    const updated = deleteLocal(id);
+    setEntries(updated);
+    toast.success('Entry removed from scrapbook.');
+  }, []);
 
-  // ── Save edit ─────────────────────────────────────────────────────────────
-  async function saveEdit() {
-    if (!editShot) return;
-    setSaving(true);
+  // ── Filtered & sorted entries ───────────────────────────────────────────────
+  const allCategories = Array.from(new Set(entries.map(e => e.category))).filter(Boolean);
 
-    const tagsArray = editTags
-      .split(',')
-      .map((t) => t.trim().replace(/^#/, ''))
-      .filter(Boolean);
-
-    const { error } = await supabase
-      .from('saved_shots')
-      .update({ ai_caption: editCaption, tags: tagsArray })
-      .eq('id', editShot.id);
-
-    if (error) {
-      toast.error('Failed to save changes.');
-    } else {
-      setShots((prev) =>
-        prev.map((s) =>
-          s.id === editShot.id ? { ...s, ai_caption: editCaption, tags: tagsArray } : s
-        )
-      );
-      toast.success('Shot updated.');
-      setEditShot(null);
-    }
-    setSaving(false);
-  }
-
-  // ── Delete shot ───────────────────────────────────────────────────────────
-  async function confirmDelete() {
-    if (!deleteTarget) return;
-    setDeleting(true);
-
-    const { error } = await supabase
-      .from('saved_shots')
-      .delete()
-      .eq('id', deleteTarget);
-
-    if (error) {
-      toast.error('Failed to delete shot.');
-    } else {
-      setShots((prev) => prev.filter((s) => s.id !== deleteTarget));
-      toast.success('Shot deleted.');
-    }
-    setDeleteTarget(null);
-    setDeleting(false);
-  }
+  const displayed = entries
+    .filter(e => filter === 'all' || e.category === filter)
+    .sort((a, b) => {
+      if (sortBy === 'date') return new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime();
+      const sa = parseFloat(a.score.split('/')[0]) || 0;
+      const sb = parseFloat(b.score.split('/')[0]) || 0;
+      return sb - sa;
+    });
 
   return (
-    <div className="min-h-screen bg-black text-white page-enter">
+    <div className="min-h-screen bg-black text-white flex flex-col">
       <NavBar />
 
-      <main className="mx-auto max-w-5xl px-4 py-8">
-        <div className="mb-6 flex items-center justify-between">
+      <main className="flex-1 mx-auto w-full max-w-5xl px-4 py-8">
+
+        {/* Header */}
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold">My Scrapbook</h1>
-            <p className="text-sm text-zinc-500">
-              {shots.length} shot{shots.length !== 1 ? 's' : ''} captured
+            <h1 className="text-xl font-bold tracking-tight">My Scrapbook</h1>
+            <p className="text-sm text-zinc-500 font-mono mt-0.5">
+              {entries.length} shot{entries.length !== 1 ? 's' : ''} saved · PinPic by Arya Hemant Tare
             </p>
           </div>
-          <Link href="/camera">
-            <Button size="sm">
-              <Camera className="h-3.5 w-3.5" /> Capture
-            </Button>
+          <Link href="/explore">
+            <button className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-mono font-bold uppercase tracking-widest px-4 py-2.5 rounded-lg border-2 border-black shadow-[2px_2px_0px_rgba(0,0,0,0.6)] transition-all active:scale-95">
+              <Camera className="h-3.5 w-3.5" /> Capture New Shot
+            </button>
           </Link>
         </div>
 
-        {/* ── Loading skeleton ──────────────────────────────────────────── */}
+        {/* Filter + Sort Bar */}
+        {entries.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-6">
+            {/* Filter by category */}
+            <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1.5">
+              <Filter className="h-3 w-3 text-zinc-500" />
+              <select
+                value={filter}
+                onChange={e => setFilter(e.target.value)}
+                className="bg-transparent text-[10px] font-mono text-zinc-300 uppercase tracking-widest outline-none cursor-pointer"
+              >
+                <option value="all">All Categories</option>
+                {allCategories.map(cat => (
+                  <option key={cat} value={cat}>{getCategoryStyle(cat).label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Sort */}
+            <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1.5">
+              <SortAsc className="h-3 w-3 text-zinc-500" />
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value as 'date' | 'score')}
+                className="bg-transparent text-[10px] font-mono text-zinc-300 uppercase tracking-widest outline-none cursor-pointer"
+              >
+                <option value="date">Latest First</option>
+                <option value="score">Highest Score</option>
+              </select>
+            </div>
+
+            {/* Count badge */}
+            <div className="ml-auto flex items-center">
+              <span className="text-[9px] font-mono text-zinc-600 uppercase">
+                {displayed.length} of {entries.length} shown
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Loading */}
         {loading && (
-          <div className="scrapbook-grid">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="shot-card">
-                <Skeleton className="h-full w-full" />
-              </div>
+              <div key={i} className="aspect-square rounded-lg bg-zinc-900 animate-pulse" />
             ))}
           </div>
         )}
 
-        {/* ── Empty state ───────────────────────────────────────────────── */}
-        {!loading && shots.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
-            <BookImage className="h-10 w-10 text-zinc-700" />
-            <p className="text-sm text-zinc-500">No shots yet.</p>
-            <Link href="/camera">
-              <Button variant="outline" size="sm">Open Camera</Button>
+        {/* Empty state */}
+        {!loading && entries.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-24 gap-5 text-center">
+            <div className="h-16 w-16 rounded-full bg-zinc-900 flex items-center justify-center">
+              <BookImage className="h-8 w-8 text-zinc-700" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-zinc-400">No shots yet</p>
+              <p className="text-xs text-zinc-600 font-mono mt-1">
+                Head to the Explore Map, capture a photo, and save it here.
+              </p>
+            </div>
+            <Link href="/explore">
+              <button className="bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-mono font-bold uppercase tracking-widest px-5 py-2.5 rounded-lg border-2 border-black transition-all active:scale-95">
+                Open Explore Map
+              </button>
             </Link>
           </div>
         )}
 
-        {/* ── Grid ─────────────────────────────────────────────────────── */}
-        {!loading && shots.length > 0 && (
-          <div className="scrapbook-grid">
-            {shots.map((shot) => (
-              <ShotCard
-                key={shot.id}
-                shot={shot}
-                onEdit={() => openEdit(shot)}
-                onDelete={() => setDeleteTarget(shot.id)}
-              />
+        {/* No filter results */}
+        {!loading && entries.length > 0 && displayed.length === 0 && (
+          <div className="py-16 text-center">
+            <p className="text-sm text-zinc-500 font-mono">No shots match this filter.</p>
+            <button onClick={() => setFilter('all')} className="text-xs text-emerald-500 font-mono mt-2 hover:underline">
+              Clear filter
+            </button>
+          </div>
+        )}
+
+        {/* Grid */}
+        {!loading && displayed.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {displayed.map(entry => (
+              <EntryCard key={entry.id} entry={entry} onDelete={handleDelete} />
             ))}
           </div>
         )}
       </main>
 
-      {/* ── Edit Dialog ─────────────────────────────────────────────────── */}
-      <Dialog open={!!editShot} onOpenChange={(o) => !o && setEditShot(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Shot</DialogTitle>
-            <DialogDescription>Update the caption and tags for this shot.</DialogDescription>
-          </DialogHeader>
-
-          <div className="flex flex-col gap-4 py-2">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="edit-caption">Caption</Label>
-              <textarea
-                id="edit-caption"
-                value={editCaption}
-                onChange={(e) => setEditCaption(e.target.value)}
-                rows={3}
-                className="flex w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500 resize-none"
-                placeholder="Your travel story…"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="edit-tags">Tags (comma-separated)</Label>
-              <Input
-                id="edit-tags"
-                value={editTags}
-                onChange={(e) => setEditTags(e.target.value)}
-                placeholder="travel, photography, eiffeltower"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditShot(null)} disabled={saving}>
-              Cancel
-            </Button>
-            <Button onClick={saveEdit} disabled={saving}>
-              {saving ? 'Saving…' : 'Save changes'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Delete Confirmation Dialog ────────────────────────────────── */}
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Shot</DialogTitle>
-            <DialogDescription>
-              This action cannot be undone. The shot will be permanently removed.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
-              {deleting ? 'Deleting…' : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Footer />
     </div>
   );
 }
 
-// ── Shot Card ─────────────────────────────────────────────────────────────────
-function ShotCard({
-  shot,
-  onEdit,
+// ── Entry Card Component ───────────────────────────────────────────────────────
+function EntryCard({
+  entry,
   onDelete,
 }: {
-  shot: SavedShot;
-  onEdit: () => void;
-  onDelete: () => void;
+  entry:    LocalEntry;
+  onDelete: (id: string) => void;
 }) {
-  const accuracy = shot.match_accuracy ?? 0;
-  const badgeVariant =
-    accuracy >= 95 ? 'perfect' : accuracy >= 70 ? 'good' : 'low';
+  const { label, color } = getCategoryStyle(entry.category);
+  const scoreNum = parseFloat(entry.score.split('/')[0]) || 0;
+  const scorePercent = Math.round((scoreNum / 10) * 100);
 
-  const isBase64 = shot.captured_image_url.startsWith('data:');
+  const dateStr = new Date(entry.savedAt).toLocaleDateString('en-IN', {
+    day:   'numeric',
+    month: 'short',
+    year:  'numeric',
+  });
 
   return (
-    <div className="shot-card group relative bg-zinc-950">
+    <div className="group relative bg-zinc-950 border border-zinc-800 rounded-lg overflow-hidden hover:border-zinc-600 transition-colors">
       {/* Image */}
-      {isBase64 ? (
-        // eslint-disable-next-line @next/next/no-img-element
+      <div className="aspect-square overflow-hidden bg-zinc-900">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={shot.captured_image_url}
-          alt={shot.hotspots?.title ?? 'Captured shot'}
-          className="h-full w-full object-cover"
+          src={entry.imageData}
+          alt={entry.hotspot}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           loading="lazy"
         />
-      ) : (
-        <Image
-          src={shot.captured_image_url}
-          alt={shot.hotspots?.title ?? 'Captured shot'}
-          fill
-          sizes="(max-width: 640px) 50vw, 25vw"
-          className="object-cover"
-          loading="lazy"
-        />
-      )}
+      </div>
 
-      {/* Overlay on hover */}
-      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/70 transition-colors flex flex-col justify-between p-2 opacity-0 group-hover:opacity-100">
-        {/* Top — accuracy badge */}
-        <div className="flex justify-end">
-          <Badge variant={badgeVariant}>{accuracy}%</Badge>
-        </div>
+      {/* Category badge */}
+      <div
+        className="absolute top-2 left-2 text-[7px] font-mono font-bold uppercase tracking-widest px-1.5 py-0.5 rounded"
+        style={{ background: `${color}33`, color, border: `1px solid ${color}66` }}
+      >
+        {label}
+      </div>
 
-        {/* Bottom — meta + actions */}
-        <div className="flex flex-col gap-1">
-          {shot.hotspots?.title && (
-            <p className="text-xs text-zinc-300 truncate">{shot.hotspots.title}</p>
-          )}
-          <p className="text-xs text-zinc-600">{formatDate(shot.created_at)}</p>
-          <div className="flex gap-1 pt-1">
-            <button
-              onClick={onEdit}
-              aria-label="Edit shot"
-              className="flex-1 flex items-center justify-center gap-1 rounded border border-zinc-700 py-1 text-xs text-zinc-300 hover:border-zinc-500 hover:text-white transition-colors"
-            >
-              <Pencil className="h-3 w-3" /> Edit
-            </button>
-            <button
-              onClick={onDelete}
-              aria-label="Delete shot"
-              className="flex items-center justify-center rounded border border-zinc-700 px-2 py-1 text-xs text-red-400 hover:border-red-700 hover:text-red-300 transition-colors"
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
-          </div>
+      {/* Score badge */}
+      <div className="absolute top-2 right-2 bg-black/80 border border-zinc-700 px-1.5 py-0.5 rounded flex items-center gap-1">
+        <Star className="h-2.5 w-2.5 text-amber-400" />
+        <span className="text-[8px] font-mono font-bold text-white">{scorePercent}%</span>
+      </div>
+
+      {/* Info overlay */}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-start gap-1 mb-1">
+          <MapPin className="h-2.5 w-2.5 text-emerald-500 mt-0.5 shrink-0" />
+          <p className="text-[9px] font-mono text-zinc-200 leading-tight truncate">{entry.hotspot}</p>
         </div>
+        <p className="text-[7px] font-mono text-zinc-500 mb-2">{dateStr}</p>
+
+        {/* Tip snippet */}
+        {entry.tip && (
+          <p className="text-[7px] font-mono text-amber-400/80 italic leading-tight mb-2 line-clamp-2">
+            💡 {entry.tip}
+          </p>
+        )}
+
+        <button
+          onClick={() => onDelete(entry.id)}
+          className="w-full flex items-center justify-center gap-1 border border-red-900/60 text-red-400 hover:bg-red-950/40 hover:text-red-300 text-[8px] font-mono uppercase tracking-widest py-1.5 rounded transition-colors"
+          aria-label="Delete this entry"
+        >
+          <Trash2 className="h-2.5 w-2.5" /> Delete
+        </button>
       </div>
     </div>
   );
