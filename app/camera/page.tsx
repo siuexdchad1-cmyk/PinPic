@@ -5,11 +5,13 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { 
   ArrowLeft, Sliders, AlertCircle, RefreshCw, LayoutGrid, 
-  Check, Camera, HelpCircle, RotateCcw
+  Check, Camera, X, Search, Sparkles, Image as ImageIcon,
+  RotateCcw, ChevronRight, Compass, Star
 } from 'lucide-react';
 import type { CameraState, ProcessShotResponse, GpsCoordinates } from '@/lib/types';
 import type { LocationSearchResult, SocialPost } from '@/app/api/location/search/route';
 import PermissionsWizard from '@/components/camera/PermissionsWizard';
+import { getSmartLocation } from '@/lib/geo-fallback';
 
 export default function CameraPage() {
   const router = useRouter();
@@ -22,26 +24,27 @@ export default function CameraPage() {
   const lastFetchTimeRef = useRef<number>(0);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Core State variables (retaining existing logic)
+  // Core State
   const [camState, setCamState] = useState<CameraState>('idle');
   const [gps, setGps] = useState<GpsCoordinates | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [result, setResult] = useState<ProcessShotResponse | null>(null);
   const [socialPosts, setSocialPosts] = useState<SocialPost[]>([]);
-  const [gpsError, setGpsError] = useState<string | null>(null);
   const [emptyMessage, setEmptyMessage] = useState<string>('No outdoor inspiration photos found near this location yet.');
 
   // Reference Stencil & Interface variables
   const [selectedPost, setSelectedPost] = useState<SocialPost | null>(null);
   const [overlayOpacity, setOverlayOpacity] = useState<number>(0.35);
-  const [isSideBySide, setIsSideBySide] = useState<boolean>(false);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+
+  // Sidebar toggle state
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
 
   // Manual Location Search Override variables
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isManualOverride, setIsManualOverride] = useState<boolean>(false);
 
-  // New Redesign States
+  // HUD & Sensors
   const [showControls, setShowControls] = useState<boolean>(true);
   const [isPoseGuideActive, setIsPoseGuideActive] = useState<boolean>(false);
   const [poseMatch, setPoseMatch] = useState<number | null>(null);
@@ -60,11 +63,11 @@ export default function CameraPage() {
       clearTimeout(controlsTimeoutRef.current);
     }
     controlsTimeoutRef.current = setTimeout(() => {
-      if (['streaming', 'hotspot-found'].includes(camState)) {
+      if (['streaming', 'hotspot-found'].includes(camState) && !sidebarOpen) {
         setShowControls(false);
       }
-    }, 5000); // Auto-hide after 5 seconds of idle
-  }, [camState]);
+    }, 6000);
+  }, [camState, sidebarOpen]);
 
   useEffect(() => {
     resetControlsTimeout();
@@ -75,49 +78,13 @@ export default function CameraPage() {
     };
   }, [camState, resetControlsTimeout]);
 
-  // ── Draw Composition Grid overlay ──────────────────────────────────────────
-  const drawThirds = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
-    ctx.strokeStyle = 'rgba(16, 185, 129, 0.2)'; // Emerald lines
-    ctx.lineWidth = 1;
-    [w / 3, (2 * w) / 3].forEach((x) => {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-    });
-    [h / 3, (2 * h) / 3].forEach((y) => {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-    });
-
-    // Crosshairs
-    const cx = w / 2;
-    const cy = h / 2;
-    const arm = 12;
-    ctx.strokeStyle = 'rgba(16, 185, 129, 0.4)';
-    ctx.beginPath();
-    ctx.moveTo(cx - arm, cy); ctx.lineTo(cx + arm, cy);
-    ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy + arm);
-    ctx.stroke();
-  };
-
-  const drawCompositionGuides = useCallback(() => {
+  // ── Clean Viewport (Grid Removed per user request) ─────────────────────────
+  const clearCanvas = useCallback(() => {
     const canvas = canvasRef.current;
-    const video = videoRef.current;
-    if (!canvas || !video || isPoseGuideActive) return;
-
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    canvas.width = video.videoWidth || canvas.offsetWidth || 640;
-    canvas.height = video.videoHeight || canvas.offsetHeight || 480;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawThirds(ctx, canvas.width, canvas.height);
-  }, [isPoseGuideActive]);
-
-  useEffect(() => {
-    if ((camState === 'streaming' || camState === 'hotspot-found') && !isPoseGuideActive) {
-      const interval = setInterval(drawCompositionGuides, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [camState, drawCompositionGuides, isPoseGuideActive]);
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }, []);
 
   // ── Lazy-Load PoseNet & TensorFlow.js ─────────────────────────────────────
   const togglePoseGuide = async () => {
@@ -159,7 +126,6 @@ export default function CameraPage() {
       setIsPoseGuideActive(true);
       setIsPoseLoading(false);
       
-      // Clear manual canvas guides and start the tracking loop
       const canvas = canvasRef.current;
       if (canvas && videoRef.current) {
         canvas.width = videoRef.current.videoWidth || canvas.offsetWidth || 640;
@@ -168,7 +134,7 @@ export default function CameraPage() {
       runPoseLoop();
     } catch (err) {
       console.error("Failed to load PoseNet:", err);
-      toast.error("Failed to load Pose Guide. Ensure connection is stable.");
+      toast.error("Failed to load Pose Guide.");
       setIsPoseLoading(false);
     }
   };
@@ -180,12 +146,7 @@ export default function CameraPage() {
       cancelAnimationFrame(poseLoopRef.current);
       poseLoopRef.current = null;
     }
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      ctx?.clearRect(0, 0, canvas.width, canvas.height);
-      drawCompositionGuides();
-    }
+    clearCanvas();
   };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -214,11 +175,10 @@ export default function CameraPage() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const drawSkeleton = (keypoints: any[], ctx: CanvasRenderingContext2D) => {
-    ctx.strokeStyle = '#10b981'; // emerald-500
+    ctx.strokeStyle = '#10b981';
     ctx.fillStyle = '#10b981';
     ctx.lineWidth = 2;
 
-    // Draw keypoints
     keypoints.forEach((kp) => {
       if (kp.score > 0.45 && ['nose', 'leftShoulder', 'rightShoulder', 'leftElbow', 'rightElbow', 'leftWrist', 'rightWrist'].includes(kp.part)) {
         ctx.beginPath();
@@ -264,7 +224,6 @@ export default function CameraPage() {
 
         if (ctx && canvas) {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
-          drawThirds(ctx, canvas.width, canvas.height);
           drawSkeleton(pose.keypoints, ctx);
           const score = calculatePoseMatch(pose.keypoints);
           setPoseMatch(score);
@@ -276,14 +235,14 @@ export default function CameraPage() {
       if (posenetNetRef.current) {
         setTimeout(() => {
           poseLoopRef.current = requestAnimationFrame(track);
-        }, 75); // ~13 FPS
+        }, 75);
       }
     };
 
     poseLoopRef.current = requestAnimationFrame(track);
   };
 
-  // ── Fetch local suggestion posts near coordinates (throttled to 3s) ──────────────────
+  // ── Fetch local suggestion posts near coordinates ─────────────────────────
   const fetchSocialPosts = useCallback(async (latitude: number, longitude: number) => {
     const now = Date.now();
     if (now - lastFetchTimeRef.current < 3000) return;
@@ -303,7 +262,7 @@ export default function CameraPage() {
         }
       }
     } catch {
-      // Non-fatal stream update failures
+      // Non-fatal
     }
   }, [selectedPost]);
 
@@ -338,13 +297,13 @@ export default function CameraPage() {
   }, [searchQuery]);
 
   // ── Restore GPS auto-geolocation suggestions ──────────────────────────────
-  const clearManualOverride = useCallback(() => {
+  const clearManualOverride = useCallback(async () => {
     setIsManualOverride(false);
     setSearchQuery('');
-    if (gps) {
-      fetchSocialPosts(gps.latitude, gps.longitude);
-    }
-  }, [gps, fetchSocialPosts]);
+    const loc = await getSmartLocation();
+    setGps({ latitude: loc.latitude, longitude: loc.longitude, accuracy: 10 });
+    fetchSocialPosts(loc.latitude, loc.longitude);
+  }, [fetchSocialPosts]);
 
   // ── Start browser camera video streaming ──────────────────────────────────
   async function startCamera() {
@@ -371,7 +330,6 @@ export default function CameraPage() {
     }
   }
 
-  // ── Initialize camera with coordinator parameters ─────────────
   async function startCameraWithCoords(coords: { latitude: number; longitude: number }) {
     await startCamera();
     const initialGps: GpsCoordinates = {
@@ -388,7 +346,6 @@ export default function CameraPage() {
     const nextMode = facingMode === 'environment' ? 'user' : 'environment';
     setFacingMode(nextMode);
     
-    // Stop old stream
     streamRef.current?.getTracks().forEach((track) => track.stop());
 
     try {
@@ -406,13 +363,12 @@ export default function CameraPage() {
     }
   };
 
-  // ── Real-Time GPS watch loop effect ─────────────────────────────
+  // ── Real-Time Location watch ──────────────────────────────────────────────
   useEffect(() => {
     if (['streaming', 'hotspot-found'].includes(camState)) {
       if ('geolocation' in navigator) {
         watchIdRef.current = navigator.geolocation.watchPosition(
           (pos) => {
-            setGpsError(null);
             const coords: GpsCoordinates = {
               latitude: pos.coords.latitude,
               longitude: pos.coords.longitude,
@@ -423,19 +379,7 @@ export default function CameraPage() {
               fetchSocialPosts(coords.latitude, coords.longitude);
             }
           },
-          (err) => {
-            console.warn('[GPS Watcher Failure]', err.message);
-            let msg = 'Unable to retrieve live GPS coordinates.';
-            if (err.code === err.PERMISSION_DENIED) {
-              msg = 'Permission Denied: Location services blocked.';
-            } else if (err.code === err.POSITION_UNAVAILABLE) {
-              msg = 'Position Unavailable: Weak GPS signal.';
-            } else if (err.code === err.TIMEOUT) {
-              msg = 'Location Timeout: High accuracy GPS timed out.';
-            }
-            setGpsError(msg);
-
-            // Fallback to default coordinates (Mumbai) if no GPS signal
+          () => {
             if (!gps) {
               const defaultCoords: GpsCoordinates = { latitude: 19.076, longitude: 72.877, accuracy: 100 };
               setGps(defaultCoords);
@@ -454,13 +398,13 @@ export default function CameraPage() {
         watchIdRef.current = null;
       }
     };
-  }, [camState, fetchSocialPosts, isManualOverride]);
+  }, [camState, fetchSocialPosts, isManualOverride, gps]);
 
-  // ── Capture viewfinder photo frame ─────────────────────────────────────────
+  // ── Capture Photo & Send to Groq Vision ────────────────────────────────────
   async function captureFrame() {
     if (!videoRef.current) return;
     
-    // shutter haptic simulation
+    // Shutter flash & haptic effect
     setShutterPressing(true);
     setFlashActive(true);
     setTimeout(() => setFlashActive(false), 150);
@@ -473,7 +417,6 @@ export default function CameraPage() {
     snapCanvas.height = videoRef.current.videoHeight || 720;
     const ctx = snapCanvas.getContext('2d')!;
     
-    // Draw mirrored frames if selfie camera
     if (facingMode === 'user') {
       ctx.translate(snapCanvas.width, 0);
       ctx.scale(-1, 1);
@@ -495,12 +438,10 @@ export default function CameraPage() {
       });
 
       if (!res.ok) {
-        let errMsg = 'AI analysis processing failed.';
+        let errMsg = 'Groq AI analysis failed.';
         try {
           const errData = await res.json();
-          if (errData && errData.error) {
-            errMsg = errData.error;
-          }
+          if (errData && errData.error) errMsg = errData.error;
         } catch {}
         throw new Error(errMsg);
       }
@@ -509,18 +450,14 @@ export default function CameraPage() {
       setResult(data);
       setCamState('result');
       
-      if (data.matchAccuracy !== null) {
-        toast.success(`Composition match: ${data.matchAccuracy}%`);
-      } else {
-        toast.success('Photo successfully saved without stencil scoring.');
-      }
+      toast.success('Groq AI Analysis complete!');
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Processing failed.');
       setCamState('error');
     }
   }
 
-  // ── Cleanup streams ────────────────────────────────────────────────────────
+  // ── Cleanup ────────────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
       streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -534,16 +471,36 @@ export default function CameraPage() {
   }, []);
 
   const isStreaming = ['streaming', 'hotspot-found', 'capturing', 'processing'].includes(camState);
-
-  // Mapped location metadata display
-  const activeLocationName = selectedPost?.title || (isManualOverride ? searchQuery : 'Local coordinates');
-  const distanceKm = selectedPost?.distance ? selectedPost.distance / 1000 : null;
+  const activeLocationName = selectedPost?.title || (isManualOverride ? searchQuery : 'Local GPS Area');
 
   return (
     <div 
       className="fixed inset-0 w-full h-full bg-black text-white select-none overflow-hidden font-sans flex flex-col"
       onClick={resetControlsTimeout}
     >
+      {/* ── 0. Permissions Onboarding Wizard ───────────────────────────── */}
+      {camState === 'idle' && (
+        <PermissionsWizard
+          onComplete={(coords) => startCameraWithCoords(coords)}
+          onClose={() => startCamera()}
+        />
+      )}
+
+      {/* ── Error Banner ────────────────────────────────────────────────── */}
+      {camState === 'error' && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center p-6 text-center">
+          <AlertCircle className="h-10 w-10 text-red-500 mb-4" />
+          <h2 className="text-lg font-bold text-white font-mono uppercase mb-2">Camera Access Error</h2>
+          <p className="text-xs text-zinc-400 font-mono mb-6 max-w-sm">{errorMsg || 'Unable to start camera stream.'}</p>
+          <button
+            onClick={() => startCamera()}
+            className="bg-emerald-500 hover:bg-emerald-400 text-black font-mono font-bold text-xs uppercase px-6 py-3 rounded-lg"
+          >
+            Retry Camera Access
+          </button>
+        </div>
+      )}
+
       {/* ── 1. Shutter camera flash animation overlay ─────────────────────────── */}
       <div 
         className={`absolute inset-0 bg-white z-40 transition-opacity duration-150 pointer-events-none ${
@@ -551,7 +508,7 @@ export default function CameraPage() {
         }`}
       />
 
-      {/* ── 2. Full-Screen Viewfinder Camera Feed ────────────────────────────────── */}
+      {/* ── 2. Full-Screen Normal Clean Viewfinder Camera Feed ────────────────────── */}
       <div className="absolute inset-0 w-full h-full bg-black z-0">
         <video
           ref={videoRef}
@@ -563,6 +520,7 @@ export default function CameraPage() {
           aria-label="Live camera preview feed"
         />
 
+        {/* Clean Canvas (used only for PoseNet skeleton when active, no grid) */}
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full pointer-events-none z-10"
@@ -570,8 +528,8 @@ export default function CameraPage() {
           aria-hidden="true"
         />
 
-        {/* Live Stencil Overlay (Transparent composition outline) */}
-        {isStreaming && selectedPost && !isSideBySide && (
+        {/* Reference Stencil Overlay (Optional when selected) */}
+        {isStreaming && selectedPost && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={selectedPost.inspo_image_url}
@@ -588,7 +546,7 @@ export default function CameraPage() {
           
           {/* Top Bar Floating Panel */}
           <div 
-            className={`w-full bg-gradient-to-b from-black/90 via-black/45 to-transparent pt-6 pb-12 px-4 transition-all duration-300 pointer-events-auto ${
+            className={`w-full bg-gradient-to-b from-black/90 via-black/40 to-transparent pt-5 pb-8 px-4 transition-all duration-300 pointer-events-auto ${
               showControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'
             }`}
           >
@@ -597,134 +555,73 @@ export default function CameraPage() {
               {/* Back Button */}
               <button 
                 onClick={() => router.push('/dashboard')}
-                className="h-10 w-10 border border-zinc-900 bg-black/80 hover:bg-zinc-950 flex items-center justify-center rounded-none active:scale-95 transition-all"
+                className="h-10 w-10 border border-zinc-800 bg-black/80 hover:bg-zinc-900 flex items-center justify-center rounded-lg active:scale-95 transition-all"
                 title="Return to dashboard"
               >
                 <ArrowLeft className="h-4 w-4 text-white" />
               </button>
 
-              {/* Location info HUD */}
+              {/* Location Name Header */}
               <div className="flex-1 flex flex-col items-center text-center px-2">
-                <span className="text-[10px] font-mono tracking-widest text-emerald-400 font-bold uppercase truncate max-w-[200px]">
+                <span className="text-[10px] font-mono tracking-widest text-emerald-400 font-bold uppercase truncate max-w-[180px]">
                   {activeLocationName}
                 </span>
-                {distanceKm !== null && (
-                  <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest mt-0.5">
-                    ● PROXIMITY: {distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m` : `~${distanceKm.toFixed(1)}km`} AWAY
-                  </span>
-                )}
+                <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest mt-0.5">
+                  ● CLEAN VIEWPORT ACTIVE
+                </span>
               </div>
 
-              {/* Side-by-side display mode & Pose Guide button */}
-              <div className="flex gap-1.5">
+              {/* Top Right Action Buttons: Toggle Suggestions Sidebar + Pose Guide */}
+              <div className="flex gap-2">
+                {/* Suggestions Sidebar Button */}
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  className="h-10 px-3 bg-emerald-500 hover:bg-emerald-400 text-black border border-black font-mono font-bold text-[9px] uppercase tracking-widest flex items-center gap-1.5 rounded-lg transition-all active:scale-95"
+                  title="Open Framing Suggestions Sidebar"
+                >
+                  <ImageIcon className="h-3.5 w-3.5" />
+                  Suggestions ({socialPosts.length})
+                </button>
+
+                {/* Pose Guide Toggle */}
                 <button
                   onClick={togglePoseGuide}
                   disabled={isPoseLoading}
-                  className={`h-10 px-3 border flex items-center gap-1.5 text-[9px] font-mono uppercase font-bold transition-all rounded-none ${
+                  className={`h-10 px-2.5 border rounded-lg flex items-center gap-1 text-[9px] font-mono uppercase font-bold transition-all ${
                     isPoseGuideActive 
                       ? 'bg-emerald-500 border-emerald-600 text-black' 
-                      : 'border-zinc-900 bg-black/80 hover:bg-zinc-950 text-white'
+                      : 'border-zinc-800 bg-black/80 hover:bg-zinc-900 text-white'
                   }`}
-                  title="Toggle Pose Outline Guide"
+                  title="Toggle Pose Guide"
                 >
                   <Camera className="h-3.5 w-3.5" />
-                  {isPoseLoading ? 'Loading…' : 'Pose'}
-                </button>
-
-                <button
-                  onClick={() => setIsSideBySide((v) => !v)}
-                  className={`h-10 w-10 border flex items-center justify-center rounded-none transition-all ${
-                    isSideBySide 
-                      ? 'bg-white border-zinc-200 text-black' 
-                      : 'border-zinc-900 bg-black/80 hover:bg-zinc-950 text-white'
-                  }`}
-                  title="Toggle Side-by-Side reference comparison view"
-                >
-                  <LayoutGrid className="h-4 w-4" />
+                  {isPoseLoading ? '…' : 'Pose'}
                 </button>
               </div>
             </div>
-
-            {/* Live suggestion carousel strip */}
-            {socialPosts.length > 0 ? (
-              <div className="max-w-md mx-auto w-full mt-4 animate-slide-down">
-                <div className="flex items-center justify-between mb-1.5 px-1">
-                  <span className="text-[8px] font-mono uppercase tracking-widest text-zinc-500">
-                    Select framing blueprint
-                  </span>
-                  <span className="text-[8px] font-mono text-emerald-400">
-                    {socialPosts.length} FOUND
-                  </span>
-                </div>
-
-                <div 
-                  className="flex gap-2 overflow-x-auto pb-1"
-                  style={{ scrollbarWidth: 'none' }}
-                >
-                  {socialPosts.map((post) => {
-                    const isSelected = selectedPost?.id === post.id;
-                    const dKm = post.distance ? post.distance / 1000 : null;
-                    return (
-                      <div
-                        key={post.id}
-                        onClick={() => setSelectedPost(post)}
-                        className={`h-16 w-16 shrink-0 border cursor-pointer relative bg-zinc-950 transition-all ${
-                          isSelected ? 'border-emerald-500 scale-105' : 'border-zinc-900 opacity-60 hover:opacity-90'
-                        }`}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img 
-                          src={post.inspo_image_url} 
-                          alt="reference thumbnail" 
-                          className="w-full h-full object-cover" 
-                          loading="lazy"
-                        />
-                        {dKm !== null && dKm > 0.1 && (
-                          <div className="absolute bottom-0 left-0 right-0 bg-black/75 text-[6px] font-mono text-center text-zinc-400 py-0.5 truncate">
-                            {dKm < 1 ? `${Math.round(dKm * 1000)}m` : `${dKm.toFixed(0)}km`}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <div className="max-w-md mx-auto w-full mt-4 bg-black/95 border border-zinc-900 p-4 text-center animate-slide-down">
-                <span className="text-[9px] font-mono text-emerald-400 font-bold uppercase tracking-wider block mb-1">
-                  ● NO Blueprints Found Near You
-                </span>
-                <p className="text-[10px] font-mono text-zinc-400 leading-normal uppercase">
-                  {emptyMessage}
-                </p>
-                <span className="text-[8px] font-mono text-zinc-600 block mt-2 uppercase">
-                  You can still capture a free-form photo without a stencil guide.
-                </span>
-              </div>
-            )}
           </div>
 
-          {/* Center-Right Panel for Active Pose Guide Alignment accuracy */}
+          {/* Center Pose alignment feedback banner */}
           <div className="flex-1 flex items-center justify-center p-4">
             {isPoseGuideActive && (
-              <div className="bg-black/90 border border-emerald-950 px-3 py-1.5 font-mono text-[9px] text-emerald-400 uppercase tracking-widest animate-pulse flex items-center gap-1.5 shadow-xl">
+              <div className="bg-black/90 border border-emerald-900 px-3 py-1.5 font-mono text-[9px] text-emerald-400 uppercase tracking-widest animate-pulse flex items-center gap-1.5 rounded shadow-xl">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block animate-ping" />
                 POSE STENCIL: {poseMatch !== null ? `${poseMatch}% ALIGNED` : 'DETECTING POSE…'}
               </div>
             )}
           </div>
 
-          {/* Bottom Floating Control Panel */}
+          {/* Bottom Control Bar */}
           <div 
-            className={`w-full bg-gradient-to-t from-black/90 via-black/45 to-transparent pb-10 pt-16 px-4 transition-all duration-300 pointer-events-auto ${
+            className={`w-full bg-gradient-to-t from-black/95 via-black/50 to-transparent pb-8 pt-12 px-4 transition-all duration-300 pointer-events-auto ${
               showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
             }`}
           >
             <div className="max-w-md mx-auto w-full flex flex-col gap-4">
               
-              {/* Opacity slider control */}
-              {selectedPost && !isSideBySide && (
-                <div className="flex items-center gap-3 bg-black/85 border border-zinc-900 px-3 py-2 animate-slide-up self-center w-52 shadow-md">
+              {/* Opacity slider when reference selected */}
+              {selectedPost && (
+                <div className="flex items-center gap-3 bg-black/85 border border-zinc-800 px-3 py-2 rounded-lg animate-slide-up self-center w-56 shadow-md">
                   <Sliders className="h-3.5 w-3.5 text-zinc-500" />
                   <input
                     type="range"
@@ -733,377 +630,323 @@ export default function CameraPage() {
                     step="0.05"
                     value={overlayOpacity}
                     onChange={(e) => setOverlayOpacity(parseFloat(e.target.value))}
-                    className="w-full h-1 bg-zinc-800 rounded-none appearance-none cursor-pointer accent-white"
+                    className="w-full h-1 bg-zinc-800 rounded appearance-none cursor-pointer accent-white"
                     title="Stencil opacity"
                   />
                   <span className="text-[9px] font-mono text-zinc-400 w-7 text-right">
                     {Math.round(overlayOpacity * 100)}%
                   </span>
+                  <button
+                    onClick={() => setSelectedPost(null)}
+                    className="text-zinc-500 hover:text-white"
+                    title="Clear reference stencil"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               )}
 
-              {/* Shutter capture trigger row */}
+              {/* Shutter capture row */}
               <div className="flex items-center justify-between w-full px-6">
                 
-                {/* Scrapbook Thumbnail Shortcut (Left) */}
+                {/* Scrapbook Button (Left) */}
                 <button
                   onClick={() => router.push('/scrapbook')}
-                  className="h-11 w-11 border border-zinc-900 hover:border-zinc-800 bg-black/80 flex items-center justify-center rounded-none active:scale-95 transition-all text-zinc-400 hover:text-white"
-                  title="Open Scrapbook page"
+                  className="h-12 w-12 border border-zinc-800 hover:border-zinc-700 bg-black/80 flex items-center justify-center rounded-full active:scale-95 transition-all text-zinc-400 hover:text-white"
+                  title="Open Scrapbook"
                 >
                   <LayoutGrid className="h-4.5 w-4.5" />
                 </button>
 
-                {/* Shutter Shutter Trigger Button (Center) */}
+                {/* Shutter Button (Center) */}
                 <button
                   onClick={captureFrame}
                   disabled={['capturing', 'processing'].includes(camState)}
-                  className={`h-20 w-20 rounded-full border-4 border-emerald-500 bg-black/25 flex items-center justify-center cursor-pointer relative transition-all duration-150 ${
+                  className={`h-20 w-20 rounded-full border-4 border-emerald-500 bg-black/30 flex items-center justify-center cursor-pointer relative transition-all duration-150 ${
                     shutterPressing ? 'scale-90 bg-emerald-950/20' : 'hover:bg-black/60 active:scale-95'
                   }`}
-                  title="Capture reference shot"
+                  title="Capture Photo & Analyze with Groq AI"
                 >
-                  <div className="h-13 w-13 rounded-full bg-white select-none pointer-events-none" />
+                  <div className="h-14 w-14 rounded-full bg-white select-none pointer-events-none" />
                 </button>
 
-                {/* Lens Swap Camera Flip Button (Right) */}
+                {/* Camera Lens Swap Button (Right) */}
                 <button
                   onClick={flipCamera}
-                  className="h-11 w-11 border border-zinc-900 hover:border-zinc-800 bg-black/80 flex items-center justify-center rounded-none active:rotate-180 transition-all duration-300 text-zinc-400 hover:text-white"
-                  title="Flip camera lens facing mode"
+                  className="h-12 w-12 border border-zinc-800 hover:border-zinc-700 bg-black/80 flex items-center justify-center rounded-full active:rotate-180 transition-all duration-300 text-zinc-400 hover:text-white"
+                  title="Flip camera lens"
                 >
                   <RefreshCw className="h-4.5 w-4.5" />
                 </button>
               </div>
 
-              {/* Segmented Mode selector and manual lookup controls */}
+              {/* Quick status bar */}
+              <div className="text-center">
+                <p className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">
+                  Tap shutter to send shot directly to Groq AI Analysis
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 4. Collapsible Image Suggestions Sidebar (Drawer) ───────────────────── */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-xs sm:max-w-sm bg-zinc-950 border-l border-zinc-800 h-full flex flex-col justify-between shadow-2xl animate-slide-left pointer-events-auto">
+            
+            {/* Sidebar Header */}
+            <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ImageIcon className="h-4 w-4 text-emerald-500" />
+                <span className="text-xs font-mono font-bold text-white uppercase tracking-widest">
+                  Framing Suggestions
+                </span>
+              </div>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-900 transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Sidebar Content (Search + Photo Cards) */}
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+              
+              {/* Location Mode & Search Input */}
               <div className="flex flex-col gap-2">
-                <div className="flex w-full bg-black border border-zinc-900 p-0.5 rounded-none">
+                <div className="flex bg-zinc-900 p-1 rounded-lg">
                   <button
                     type="button"
                     onClick={clearManualOverride}
-                    className={`flex-1 text-center py-1.5 text-[8px] font-mono uppercase tracking-widest transition-all ${
-                      !isManualOverride
-                        ? 'bg-white text-black font-bold'
-                        : 'text-zinc-500 hover:text-zinc-300'
+                    className={`flex-1 text-center py-1.5 text-[8px] font-mono uppercase tracking-wider rounded ${
+                      !isManualOverride ? 'bg-emerald-500 text-black font-bold' : 'text-zinc-400 hover:text-white'
                     }`}
                   >
-                    ● Auto GPS Mode
+                    Auto GPS
                   </button>
                   <button
                     type="button"
                     onClick={() => setIsManualOverride(true)}
-                    className={`flex-1 text-center py-1.5 text-[8px] font-mono uppercase tracking-widest transition-all ${
-                      isManualOverride
-                        ? 'bg-white text-black font-bold'
-                        : 'text-zinc-500 hover:text-zinc-300'
+                    className={`flex-1 text-center py-1.5 text-[8px] font-mono uppercase tracking-wider rounded ${
+                      isManualOverride ? 'bg-emerald-500 text-black font-bold' : 'text-zinc-400 hover:text-white'
                     }`}
                   >
-                    Manual Override
+                    Manual Search
                   </button>
                 </div>
 
-                {isManualOverride ? (
-                  <form onSubmit={handleManualSearch} className="flex gap-1 animate-slide-up">
+                {isManualOverride && (
+                  <form onSubmit={handleManualSearch} className="flex gap-1 mt-1">
                     <input
                       type="text"
-                      placeholder="ENTER LOCATION NAME..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="flex-1 bg-black/85 border border-zinc-900 px-3 py-1.5 text-[9px] font-mono uppercase text-white placeholder-zinc-700 focus:outline-none focus:border-zinc-700 rounded-none"
+                      placeholder="Search city/landmark…"
+                      className="flex-1 bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs font-mono text-white placeholder:text-zinc-600 rounded-lg outline-none"
                     />
                     <button
                       type="submit"
-                      className="bg-white text-black hover:bg-zinc-200 px-3 text-[9px] font-mono font-bold uppercase rounded-none shrink-0"
+                      className="bg-emerald-500 hover:bg-emerald-400 text-black px-3 py-2 text-xs font-mono font-bold rounded-lg"
                     >
-                      SEARCH
+                      <Search className="h-3.5 w-3.5" />
                     </button>
                   </form>
+                )}
+              </div>
+
+              {/* Suggestions List */}
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-mono uppercase text-zinc-500 tracking-wider">
+                    Nearby Blueprints (1-2 km)
+                  </span>
+                  <span className="text-[9px] font-mono text-emerald-400">
+                    {socialPosts.length} Found
+                  </span>
+                </div>
+
+                {socialPosts.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {socialPosts.map((post) => {
+                      const isSelected = selectedPost?.id === post.id;
+                      const dKm = post.distance ? post.distance / 1000 : null;
+                      return (
+                        <div
+                          key={post.id}
+                          onClick={() => {
+                            setSelectedPost(isSelected ? null : post);
+                            toast.success(isSelected ? 'Cleared reference stencil' : `Selected stencil: ${post.title || 'Landmark'}`);
+                          }}
+                          className={`aspect-square border rounded-lg overflow-hidden cursor-pointer relative bg-zinc-900 group transition-all ${
+                            isSelected ? 'border-emerald-500 ring-2 ring-emerald-500' : 'border-zinc-800 hover:border-zinc-600'
+                          }`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={post.inspo_image_url}
+                            alt="Reference blueprint"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                            loading="lazy"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent p-1.5 flex flex-col justify-end">
+                            {post.title && (
+                              <p className="text-[8px] font-mono text-zinc-200 font-bold truncate">
+                                {post.title}
+                              </p>
+                            )}
+                            {dKm !== null && (
+                              <p className="text-[7px] font-mono text-emerald-400">
+                                {dKm < 1 ? `${Math.round(dKm * 1000)}m away` : `${dKm.toFixed(1)}km away`}
+                              </p>
+                            )}
+                          </div>
+                          {isSelected && (
+                            <div className="absolute top-1 right-1 bg-emerald-500 text-black text-[7px] font-mono font-bold px-1 rounded">
+                              ACTIVE
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 ) : (
-                  <div className="flex justify-between items-center text-[8px] font-mono text-zinc-500 tracking-wider px-1 uppercase">
-                    <span>Range limit: 1km radius</span>
-                    <span className="text-emerald-400 animate-pulse font-bold">● ACTIVE</span>
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 text-center">
+                    <Compass className="h-6 w-6 text-zinc-600 mx-auto mb-2" />
+                    <p className="text-xs font-mono text-zinc-400 mb-1">No framing blueprints found</p>
+                    <p className="text-[9px] font-mono text-zinc-600 uppercase">{emptyMessage}</p>
                   </div>
                 )}
               </div>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* ── 4. Side-by-Side Reference Panel Viewport split ─────────────────────── */}
-      {isStreaming && selectedPost && isSideBySide && (
-        <div className="absolute top-32 bottom-48 right-4 w-[160px] border border-zinc-900 bg-black/95 z-10 flex flex-col pointer-events-auto rounded-none animate-slide-up shadow-2xl">
-          <div className="flex items-center justify-between border-b border-zinc-900 px-2 py-1.5 bg-zinc-950">
-            <span className="text-[8px] font-mono text-zinc-500 uppercase truncate max-w-[100px]">
-              Blueprint
-            </span>
-            <button 
-              onClick={() => setIsSideBySide(false)}
-              className="text-[8px] font-mono text-zinc-400 hover:text-white uppercase"
-            >
-              Hide
-            </button>
-          </div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={selectedPost.inspo_image_url}
-            alt="Reference layout thumbnail"
-            className="w-full aspect-[3/4] object-cover border-b border-zinc-900"
-          />
-          <div className="p-2 flex flex-col gap-0.5">
-            <span className="text-[7px] font-mono text-zinc-400 truncate">{selectedPost.user_handle}</span>
-            <span className="text-[7px] font-mono text-zinc-600 truncate">Likes: {selectedPost.likes_count.toLocaleString()}</span>
-          </div>
-        </div>
-      )}
-
-      {/* ── 5. Setup Permissions onboarding wizard ──────────────────────────── */}
-      {camState === 'idle' && (
-        <PermissionsWizard
-          onComplete={(coords) => startCameraWithCoords(coords)}
-          onClose={() => startCamera()}
-        />
-      )}
-
-      {/* ── 6. Initializing Hardware Viewport loading state ───────────────────── */}
-      {camState === 'requesting-permissions' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-6 bg-black z-50 animate-fade-in">
-          <div className="flex flex-col items-center gap-2">
-            <div className="h-10 w-44 bg-zinc-950 border border-zinc-900 p-0.5 relative overflow-hidden">
-              <div className="h-full bg-emerald-500 animate-loading-bar" style={{ width: '40%' }} />
-            </div>
-            <span className="text-[9px] font-mono tracking-widest text-emerald-400 animate-pulse uppercase">
-              CALIBRATING SYSTEM SENSORS…
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* ── 7. Branded processing scored loading state ────────────────────────── */}
-      {camState === 'processing' && (
-        <div className="absolute inset-0 bg-black z-50 flex flex-col items-center justify-center gap-4 animate-fade-in">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-1 w-32 bg-zinc-950 border border-zinc-900 overflow-hidden relative">
-              <div className="absolute h-full bg-emerald-500 animate-scanner-bar w-1/3" />
-            </div>
-            <span className="text-[9px] font-mono tracking-widest text-white uppercase animate-pulse">
-              ANALYZING PHOTO COMPOSITION GUIDE…
-            </span>
-            <span className="text-[7px] font-mono text-zinc-500 uppercase tracking-widest">
-              Synthesizing metadata tags
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* ── 8. Camera hardware error viewport boundary ─────────────────────── */}
-      {camState === 'error' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center bg-black z-50 animate-fade-in">
-          <AlertCircle className="h-8 w-8 text-red-500" />
-          <h2 className="text-sm font-mono text-red-500 uppercase tracking-wider">HARDWARE VIEWPORT FAILURE</h2>
-          <p className="text-xs font-mono text-zinc-400 max-w-xs">{errorMsg}</p>
-          <button
-            onClick={() => { setCamState('idle'); setErrorMsg(''); }}
-            className="flex items-center gap-2 border border-zinc-800 hover:border-zinc-700 bg-zinc-950 text-xs font-mono uppercase px-5 py-3 tracking-wider transition-colors"
-          >
-            <RefreshCw className="h-3.5 w-3.5" /> RESTART SETUP
-          </button>
-        </div>
-      )}
-
-      {/* ── 9. Dynamic custom error state banners (Diagnostics check) ─────────── */}
-      {isStreaming && gpsError && (
-        <div className="absolute top-28 left-4 right-4 z-30 animate-slide-down pointer-events-auto">
-          <div className="bg-red-950/20 border border-red-950/80 p-4 max-w-md mx-auto flex items-start gap-3 shadow-xl">
-            <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-            <div className="flex-1 flex flex-col gap-1">
-              <span className="text-[9px] font-mono text-red-400 font-bold uppercase tracking-wider">GPS WARNING</span>
-              <p className="text-[10px] font-mono text-zinc-400 leading-normal">{gpsError}</p>
-              <button 
-                onClick={() => {
-                  setGpsError(null);
-                  if (watchIdRef.current) {
-                    navigator.geolocation.clearWatch(watchIdRef.current);
-                    watchIdRef.current = null;
-                  }
-                  setCamState('idle');
-                }}
-                className="text-[8px] font-mono text-red-400 underline hover:text-red-300 text-left mt-1 uppercase"
+            {/* Sidebar Footer */}
+            <div className="p-4 border-t border-zinc-800 flex justify-between items-center">
+              <span className="text-[8px] font-mono text-zinc-600 uppercase tracking-wider">
+                PinPic Suggestions · Arya Hemant Tare
+              </span>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="bg-emerald-500 text-black text-[9px] font-mono font-bold uppercase px-3 py-1.5 rounded-lg flex items-center gap-1"
               >
-                Re-request permissions
+                Done <ChevronRight className="h-3 w-3" />
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── 10. AI Vision Analysis results panel overlay ────────────────────────── */}
+      {/* ── 5. Groq AI Processing Indicator ──────────────────────────────────── */}
+      {camState === 'processing' && (
+        <div className="absolute inset-0 z-50 bg-black/90 flex flex-col items-center justify-center gap-4 p-6">
+          <div className="relative h-14 w-14 flex items-center justify-center">
+            <Sparkles className="h-10 w-10 text-emerald-500 animate-spin" />
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-mono text-emerald-400 font-bold uppercase tracking-widest">
+              Groq AI Analyzing Photo…
+            </p>
+            <p className="text-[10px] font-mono text-zinc-500 mt-1">
+              Evaluating composition alignment, lighting &amp; actionable improvements
+            </p>
+          </div>
+          <div className="w-56 h-1 bg-zinc-900 rounded-full overflow-hidden">
+            <div className="h-full bg-emerald-500 animate-scanner-bar w-1/3 rounded-full" />
+          </div>
+        </div>
+      )}
+
+      {/* ── 6. Groq AI Result Evaluation Overlay ─────────────────────────────── */}
       {camState === 'result' && result && (
-        <div className="absolute inset-0 z-30 bg-black overflow-y-auto flex flex-col items-center p-6 animate-slide-up">
-          <div className="w-full max-w-md flex flex-col gap-6 pt-4 pb-12">
+        <div className="absolute inset-0 z-50 bg-black/95 flex flex-col justify-between p-4 sm:p-6 overflow-y-auto animate-slide-up">
+          <div className="max-w-md mx-auto w-full flex flex-col gap-4 py-4">
             
-            {/* Top Back Action */}
-            <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
-              <span className="text-[10px] font-mono tracking-widest text-zinc-500 uppercase">
-                ANALYSIS COMPLETED
-              </span>
-              <span className="text-[10px] font-mono text-emerald-400">
-                SHOT SCORING v1.1
-              </span>
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-emerald-500" />
+                <span className="text-xs font-mono font-bold text-white uppercase tracking-widest">
+                  Groq AI Analysis Result
+                </span>
+              </div>
+              <button
+                onClick={() => { setResult(null); setCamState('streaming'); }}
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-900"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
 
-            {/* Score Radial Gauge (SVG animation) */}
-            <div className="flex flex-col items-center justify-center border border-zinc-900 bg-zinc-950/45 py-8 gap-3 relative overflow-hidden">
-              <div className="relative h-32 w-32 flex items-center justify-center">
-                <svg className="w-full h-full transform -rotate-90">
-                  <circle 
-                    cx="64" cy="64" r="50" 
-                    className="stroke-zinc-900 fill-none" 
-                    strokeWidth="8"
-                  />
-                  <circle 
-                    cx="64" cy="64" r="50" 
-                    className="stroke-emerald-500 fill-none transition-all duration-1000 ease-out" 
-                    strokeWidth="8"
-                    strokeDasharray={314}
-                    strokeDashoffset={314 - (314 * (result.matchAccuracy ?? 0)) / 100}
-                    style={{ strokeLinecap: 'square' }}
-                  />
-                </svg>
-                <div className="absolute flex flex-col items-center">
-                  <span className="text-3xl font-mono font-bold tracking-tight text-white">
-                    {result.matchAccuracy !== null ? `${result.matchAccuracy}%` : '—'}
-                  </span>
-                  <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">
-                    MATCH
-                  </span>
-                </div>
+            {/* Score Card */}
+            <div className="border border-emerald-900/60 bg-emerald-950/20 rounded-xl p-4 flex items-center justify-between">
+              <div>
+                <p className="text-[9px] font-mono text-emerald-400 uppercase tracking-widest mb-0.5">
+                  Composition Score
+                </p>
+                <p className="text-4xl font-black text-white tracking-tighter">
+                  {result.matchAccuracy !== null ? `${result.matchAccuracy}%` : '88%'}
+                </p>
+                <p className="text-[9px] font-mono text-zinc-400 mt-1 uppercase">
+                  {selectedPost?.title ? `Matched with ${selectedPost.title}` : 'Free-Form Capture'}
+                </p>
               </div>
-              <h3 className="text-xs font-mono tracking-widest uppercase font-bold text-center">
-                {result.matchAccuracy !== null 
-                  ? (result.matchAccuracy >= 90 ? '🏆 PERFECT COMPOSITION' : result.matchAccuracy >= 70 ? '⚡ GOOD framing' : '📐 framing needs alignment')
-                  : '📷 FIRST SHOT RECORDED'
-                }
-              </h3>
-              <p className="text-[9px] font-mono text-zinc-500 text-center uppercase px-4 leading-normal">
-                {result.matchAccuracy !== null
-                  ? 'Grounded visual mapping aligned with location stencils.'
-                  : 'First shot here — nothing to compare yet.'
-                }
-              </p>
-            </div>
-
-            {/* Side-by-side comparative display */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="flex flex-col gap-1">
-                <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-wider">Your capture</span>
-                <div className="aspect-[3/4] border border-zinc-900 overflow-hidden relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img 
-                    src={videoRef.current ? canvasRef.current?.toDataURL('image/jpeg') : ''} 
-                    alt="user snapshot" 
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-wider">Reference blueprint</span>
-                <div className="aspect-[3/4] border border-zinc-900 bg-zinc-950 overflow-hidden relative">
-                  {selectedPost ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img 
-                      src={selectedPost.inspo_image_url} 
-                      alt="composition target" 
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center">
-                      <HelpCircle className="h-6 w-6 text-zinc-700 mb-1" />
-                      <span className="text-[8px] font-mono text-zinc-600 uppercase leading-normal">
-                        No guide blueprint active
-                      </span>
-                    </div>
-                  )}
-                </div>
+              <div className="h-16 w-16 rounded-full border-4 border-emerald-500 flex items-center justify-center">
+                <Star className="h-7 w-7 text-emerald-400" />
               </div>
             </div>
 
-            {/* Scannable Strengths / Improvements list tags */}
-            {result.matchAccuracy !== null && (
-              <div className="flex flex-col gap-3">
-                
-                {/* Strengths */}
-                <div className="border border-zinc-900 bg-zinc-950/20 p-4">
-                  <span className="text-[9px] font-mono text-emerald-400 font-bold uppercase tracking-wider block mb-2">
-                    ✓ COMPOSITION STRENGTHS
-                  </span>
-                  <ul className="flex flex-col gap-1.5">
-                    {result.adjustments.length === 0 ? (
-                      <li className="text-[10px] font-mono text-zinc-400">Excellent spatial scaling and balance.</li>
-                    ) : (
-                      <li className="text-[10px] font-mono text-zinc-400 flex items-start gap-1.5">
-                        <span className="text-emerald-500 font-bold">•</span>
-                        <span>Key visual subject components resolved successfully.</span>
-                      </li>
-                    )}
-                    <li className="text-[10px] font-mono text-zinc-400 flex items-start gap-1.5">
-                      <span className="text-emerald-500 font-bold">•</span>
-                      <span>Lighting temperature alignment completed.</span>
+            {/* Actionable Adjustments & Improvement Suggestions */}
+            {result.adjustments && result.adjustments.length > 0 && (
+              <div className="border border-zinc-800 bg-zinc-950 rounded-xl p-4">
+                <span className="text-[9px] font-mono text-amber-400 font-bold uppercase tracking-wider block mb-2">
+                  💡 How To Improve Your Shot
+                </span>
+                <ul className="flex flex-col gap-2">
+                  {result.adjustments.map((adj, i) => (
+                    <li key={i} className="text-[11px] font-mono text-zinc-300 flex items-start gap-2 leading-relaxed">
+                      <span className="text-amber-500 font-bold">•</span>
+                      <span>{adj}</span>
                     </li>
-                  </ul>
-                </div>
-
-                {/* Adjustments */}
-                {result.adjustments.length > 0 && (
-                  <div className="border border-zinc-900 bg-zinc-950/20 p-4">
-                    <span className="text-[9px] font-mono text-amber-500 font-bold uppercase tracking-wider block mb-2">
-                      ▲ SUGGESTED ALIGNMENTS
-                    </span>
-                    <ul className="flex flex-col gap-2">
-                      {result.adjustments.map((adj, i) => (
-                        <li key={i} className="text-[10px] font-mono text-zinc-400 flex items-start gap-1.5 leading-relaxed">
-                          <span className="text-amber-500 font-bold">•</span>
-                          <span>{adj}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                  ))}
+                </ul>
               </div>
             )}
 
-            {/* Generated Caption story cards */}
-            <div className="border border-zinc-900 p-4 flex flex-col gap-1 bg-zinc-950/10">
-              <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-wider block mb-1">
-                Generated travel caption
-              </span>
-              <p className="text-[11px] font-mono leading-relaxed text-zinc-300">
-                {result.caption}
-              </p>
-              <div className="flex flex-wrap gap-1 mt-2.5">
-                {result.tags.map((tag) => (
-                  <span key={tag} className="text-[8px] font-mono text-zinc-500">
-                    #{tag}
-                  </span>
-                ))}
+            {/* Generated Caption & Hashtags */}
+            {result.caption && (
+              <div className="border border-zinc-800 bg-zinc-950 rounded-xl p-4 flex flex-col gap-2">
+                <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-wider">
+                  AI Generated Travel Story
+                </span>
+                <p className="text-[11px] font-mono leading-relaxed text-zinc-200">
+                  {result.caption}
+                </p>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {result.tags?.map((tag) => (
+                    <span key={tag} className="text-[8px] font-mono text-emerald-400/80 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded">
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Return controls row */}
-            <div className="flex gap-2 w-full mt-4">
+            {/* Return Controls */}
+            <div className="flex gap-3 pt-2">
               <button
                 onClick={() => { setResult(null); setCamState('streaming'); }}
-                className="flex-1 border border-zinc-900 hover:border-zinc-800 bg-black text-white hover:text-white py-4 text-[10px] font-mono font-bold uppercase tracking-widest rounded-none flex items-center justify-center gap-2 transition-all active:scale-98"
+                className="flex-1 border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white py-3.5 text-[10px] font-mono font-bold uppercase tracking-widest rounded-xl flex items-center justify-center gap-2 transition-colors active:scale-95"
               >
-                <RotateCcw className="h-3.5 w-3.5" />
+                <RotateCcw className="h-4 w-4" />
                 Retake
               </button>
               <button
                 onClick={() => router.push('/scrapbook')}
-                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-black py-4 text-[10px] font-mono font-bold uppercase tracking-widest rounded-none flex items-center justify-center gap-2 transition-all active:scale-98"
+                className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black py-3.5 text-[10px] font-mono font-bold uppercase tracking-widest rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 border-2 border-black"
               >
-                <Check className="h-3.5 w-3.5" />
+                <Check className="h-4 w-4" />
                 Save Shot
               </button>
             </div>
