@@ -11,11 +11,11 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: 'PinPic — Compose Like a Pro, Anywhere on Earth',
+    default: 'PinPic — AI Travel Photography PWA by Arya Tare',
     template: '%s | PinPic',
   },
   description:
-    'Step into a GPS hotspot anywhere on Earth, align with the AI wireframe overlay, and capture a perfectly composed travel photo — every single time.',
+    'PinPic is a major diploma project by Arya Tare — an AI and GPS-guided travel photography Progressive Web App. Step into a GPS hotspot anywhere on Earth, align with the AI wireframe overlay, and capture a perfectly composed travel photo every time.',
   keywords: [
     'travel photography',
     'composition guide',
@@ -23,7 +23,13 @@ export const metadata: Metadata = {
     'AI camera',
     'travel app',
     'photo composition',
+    'PinPic',
+    'Arya Tare',
+    'diploma project',
+    'PWA',
   ],
+  authors: [{ name: 'Arya Tare' }],
+  creator: 'Arya Tare',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
@@ -34,9 +40,9 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     siteName: 'PinPic',
-    title: 'PinPic — Compose Like a Pro, Anywhere on Earth',
+    title: 'PinPic — AI Travel Photography PWA | Diploma Project by Arya Tare',
     description:
-      'AI-guided composition matching for travelers. Step in, align, shoot.',
+      'AI-guided composition matching for travelers. Step in, align, shoot. Built by Arya Tare.',
   },
 };
 
