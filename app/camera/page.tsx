@@ -603,7 +603,7 @@ export default function CameraPage() {
             {result.adjustments && result.adjustments.length > 0 && (
               <div className="border border-zinc-800 bg-zinc-950 rounded-xl p-4">
                 <span className="text-[9px] font-mono text-amber-400 font-bold uppercase tracking-wider block mb-2">
-                  💡 How To Improve Your Shot
+                  HOW TO IMPROVE YOUR SHOT
                 </span>
                 <ul className="flex flex-col gap-2">
                   {result.adjustments.map((adj, i) => (
