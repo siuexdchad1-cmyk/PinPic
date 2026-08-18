@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Loader2, Camera, X, Star, CheckCircle2,
-  Save, RotateCcw, ImageIcon, Search,
+  Save, RotateCcw, ImageIcon,
   Sun, Sunrise, Sunset, Moon, MapPin, Sparkles,
-  Share2
+  Share2, Plus, Mic
 } from 'lucide-react';
 import { getGoldenHourTimes, isCurrentlyGoldenHour } from '@/lib/suncalc-utils';
 
@@ -462,28 +462,34 @@ export default function ExploreMap() {
       {/* Map */}
       <div ref={mapContainerRef} className="w-full h-full z-10" />
 
-      {/* ── Nominatim Search Bar ─────────────────────────────────────────────── */}
+      {/* ── Nominatim Search Bar (Liquid Glassmorphism Pill Theme) ─────────── */}
       <form
         onSubmit={handleSearch}
-        className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex gap-2 w-[90%] max-w-md pointer-events-auto"
+        className="absolute top-4 left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-lg pointer-events-auto"
       >
-        <div className="flex-1 flex items-center gap-2 bg-zinc-950/95 border border-zinc-700 rounded-lg px-3 py-2 shadow-xl">
-          <Search className="h-4 w-4 text-emerald-500 shrink-0" />
+        <div className="glass-input-pill p-1.5 flex items-center gap-3 shadow-2xl">
+          {/* Left Plus Icon Pill */}
+          <div className="h-8 w-8 rounded-full bg-white/20 border border-white/40 flex items-center justify-center text-white shrink-0 shadow-inner">
+            <Plus className="h-4 w-4" />
+          </div>
+
           <input
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search any city or landmark…"
-            className="flex-1 bg-transparent text-xs font-mono text-white placeholder:text-zinc-500 outline-none"
+            className="flex-1 bg-transparent text-xs font-mono text-white placeholder:text-white/70 outline-none font-medium tracking-wide"
           />
+
+          {/* Right Action Button Pill */}
+          <button
+            type="submit"
+            disabled={searching}
+            className="glass-btn-purple h-9 px-5 rounded-full text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 transition-transform active:scale-95 disabled:opacity-60"
+          >
+            {searching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><span>SEARCH</span><Mic className="h-3.5 w-3.5 opacity-80" /></>}
+          </button>
         </div>
-        <button
-          type="submit"
-          disabled={searching}
-          className="bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-mono font-bold px-4 rounded-lg transition-all active:scale-95 disabled:opacity-60 shrink-0 flex items-center gap-1 border border-black"
-        >
-          {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : 'SEARCH'}
-        </button>
       </form>
 
       {/* ── Suggested Photos Carousel Strip (When Area Searched) ─────────────── */}
