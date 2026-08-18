@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { MapPin, Camera, AlertCircle, ArrowRight } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { MapPin, Camera, AlertCircle, ArrowRight, Compass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface PermissionsWizardProps {
@@ -9,23 +9,34 @@ interface PermissionsWizardProps {
   onClose: () => void;
 }
 
+// Default fallback coordinates (Mumbai)
+const DEFAULT_COORDS = { latitude: 19.076, longitude: 72.877 };
+
 export default function PermissionsWizard({ onComplete, onClose }: PermissionsWizardProps) {
   const [step, setStep] = useState<1 | 2>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cachedCoords, setCachedCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
-  // ── Step 1: Geolocation ──────────────────────────────────────────────────
+  // ── Step 1: Geolocation with Fallback ────────────────────────────────────
+  const applyDefaultLocation = useCallback(() => {
+    setCachedCoords(DEFAULT_COORDS);
+    setError(null);
+    setLoading(false);
+    setStep(2);
+  }, []);
+
   function requestGeolocation() {
     setLoading(true);
     setError(null);
 
     if (!('geolocation' in navigator)) {
-      setError('GPS Location is not supported by this browser.');
-      setLoading(false);
+      setError('GPS Location is not supported by this browser. Using default location.');
+      applyDefaultLocation();
       return;
     }
 
+    // Try high accuracy first (8s timeout)
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setCachedCoords({
@@ -35,19 +46,35 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
         setLoading(false);
         setStep(2);
       },
-      (errorObj) => {
-        let msg = 'Location access was denied. PinPic needs GPS to find landmarks near you.';
-        if (errorObj.code === errorObj.PERMISSION_DENIED) {
-          msg = 'Permission Denied: Please allow location access in your device settings/browser permissions.';
-        } else if (errorObj.code === errorObj.POSITION_UNAVAILABLE) {
-          msg = 'Position Unavailable: Unable to detect GPS location. Ensure location services are on and you have signal.';
-        } else if (errorObj.code === errorObj.TIMEOUT) {
-          msg = 'Location Timeout: Took too long to acquire GPS signal. Try stepping outdoors or moving to an open area.';
-        }
-        setError(msg);
-        setLoading(false);
+      (firstErr) => {
+        console.warn('[GPS High Accuracy Failed, trying low accuracy]', firstErr.message);
+
+        // Fallback retry with low accuracy (fast IP/cell triangulation)
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setCachedCoords({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+            });
+            setLoading(false);
+            setStep(2);
+          },
+          (secondErr) => {
+            let msg = 'Location access error. You can continue using the default location below.';
+            if (secondErr.code === secondErr.PERMISSION_DENIED) {
+              msg = 'Permission Denied: Location access blocked in browser. Use default location to proceed.';
+            } else if (secondErr.code === secondErr.POSITION_UNAVAILABLE) {
+              msg = 'Position Unavailable: Unable to detect GPS location. Use default location to proceed.';
+            } else if (secondErr.code === secondErr.TIMEOUT) {
+              msg = 'Location Timeout: Took too long to acquire GPS signal indoors/desktop. Use default location to proceed.';
+            }
+            setError(msg);
+            setLoading(false);
+          },
+          { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+        );
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     );
   }
 
@@ -63,13 +90,8 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
       });
       stream.getTracks().forEach((track) => track.stop());
 
-      if (cachedCoords) {
-        onComplete(cachedCoords);
-      } else {
-        setError('GPS coordinates lost. Please restart the setup.');
-        setStep(1);
-        setLoading(false);
-      }
+      const coords = cachedCoords || DEFAULT_COORDS;
+      onComplete(coords);
     } catch {
       setError('Camera access was denied. PinPic needs the camera to overlay composition guides.');
       setLoading(false);
@@ -104,20 +126,41 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
             </p>
 
             {error && (
-              <div className="flex items-start gap-3 border border-red-950/40 bg-red-950/10 p-4 mb-6 text-xs text-red-400 font-mono">
-                <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-                <span>{error}</span>
+              <div className="flex flex-col gap-3 border border-red-950/60 bg-red-950/20 p-4 mb-6 text-xs font-mono">
+                <div className="flex items-start gap-2.5 text-red-400">
+                  <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                  <span>{error}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={applyDefaultLocation}
+                  className="self-start text-[10px] font-bold uppercase tracking-widest bg-emerald-500 hover:bg-emerald-400 text-black px-3 py-2 rounded-none transition-colors flex items-center gap-1.5 mt-1"
+                >
+                  <Compass className="h-3.5 w-3.5" />
+                  Use Default Location (Mumbai) &rarr;
+                </button>
               </div>
             )}
 
-            <Button
-              onClick={requestGeolocation}
-              disabled={loading}
-              className="w-full bg-emerald-500 hover:bg-emerald-600 text-black font-mono font-bold h-14 rounded-none transition-all duration-150 flex items-center justify-center gap-2 tracking-wider"
-            >
-              {loading ? 'ACQUIRING FIX…' : 'GRANT LOCATION ACCESS'}
-              {!loading && <ArrowRight className="h-4 w-4" />}
-            </Button>
+            <div className="flex flex-col gap-3">
+              <Button
+                onClick={requestGeolocation}
+                disabled={loading}
+                className="w-full bg-emerald-500 hover:bg-emerald-600 text-black font-mono font-bold h-14 rounded-none transition-all duration-150 flex items-center justify-center gap-2 tracking-wider"
+              >
+                {loading ? 'ACQUIRING FIX…' : 'GRANT LOCATION ACCESS'}
+                {!loading && <ArrowRight className="h-4 w-4" />}
+              </Button>
+
+              <button
+                type="button"
+                onClick={applyDefaultLocation}
+                className="w-full border border-zinc-800 hover:border-zinc-700 bg-zinc-950 hover:bg-zinc-900 text-zinc-400 hover:text-white font-mono text-xs py-3.5 transition-all flex items-center justify-center gap-2 uppercase tracking-wider"
+              >
+                <Compass className="h-3.5 w-3.5 text-emerald-500" />
+                Use Default Location (Mumbai)
+              </button>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col animate-slide-up">
@@ -157,7 +200,7 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
           onClick={onClose}
           className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors uppercase tracking-wider"
         >
-          Skip onboarding
+          Skip onboarding &rarr;
         </button>
         <span className="text-[9px] font-mono text-zinc-700">
           PINPIC PWA CORE v1.2

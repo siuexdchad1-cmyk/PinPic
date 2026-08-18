@@ -425,17 +425,26 @@ export default function CameraPage() {
           },
           (err) => {
             console.warn('[GPS Watcher Failure]', err.message);
-            let msg = 'Unable to retrieve GPS coordinates.';
+            let msg = 'Unable to retrieve live GPS coordinates.';
             if (err.code === err.PERMISSION_DENIED) {
               msg = 'Permission Denied: Location services blocked.';
             } else if (err.code === err.POSITION_UNAVAILABLE) {
               msg = 'Position Unavailable: Weak GPS signal.';
             } else if (err.code === err.TIMEOUT) {
-              msg = 'Location Timeout: Signal acquisition delay.';
+              msg = 'Location Timeout: High accuracy GPS timed out.';
             }
             setGpsError(msg);
+
+            // Fallback to default coordinates (Mumbai) if no GPS signal
+            if (!gps) {
+              const defaultCoords: GpsCoordinates = { latitude: 19.076, longitude: 72.877, accuracy: 100 };
+              setGps(defaultCoords);
+              if (!isManualOverride) {
+                fetchSocialPosts(defaultCoords.latitude, defaultCoords.longitude);
+              }
+            }
           },
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 30000 }
         );
       }
     }
