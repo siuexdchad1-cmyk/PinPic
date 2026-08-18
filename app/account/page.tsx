@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import NavBar from '@/components/shared/NavBar';
 import Footer from '@/components/shared/Footer';
+import BorderGlow from '@/components/ui/BorderGlow';
 
 export default function AccountPage() {
   const router = useRouter();
@@ -31,7 +32,6 @@ export default function AccountPage() {
         setDisplayName(user.user_metadata?.display_name || user.email?.split('@')[0] || 'Traveler');
       }
 
-      // Count LocalStorage scrapbook entries
       try {
         const local = JSON.parse(localStorage.getItem('pinpic_scrapbook') ?? '[]');
         setShotCount(local.length);
@@ -101,132 +101,152 @@ export default function AccountPage() {
           </Link>
         </div>
 
-        {/* Profile Card */}
-        <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6 flex flex-col gap-6">
-          
-          <div className="flex items-center gap-4">
-            <div className="h-16 w-16 rounded-full bg-emerald-500/10 border-2 border-emerald-500 flex items-center justify-center text-emerald-400">
-              <User className="h-8 w-8" />
+        {/* Profile Card wrapped with React Bits BorderGlow */}
+        <BorderGlow
+          backgroundColor="#09090b"
+          borderRadius={16}
+          glowColor="160 84 39"
+          colors={['#10b981', '#3b82f6', '#6366f1']}
+          edgeSensitivity={35}
+          glowRadius={35}
+          animated={true}
+        >
+          <div className="p-6 flex flex-col gap-6">
+            
+            <div className="flex items-center gap-4">
+              <div className="h-16 w-16 rounded-full bg-emerald-500/10 border-2 border-emerald-500 flex items-center justify-center text-emerald-400">
+                <User className="h-8 w-8" />
+              </div>
+
+              <div className="flex-1">
+                {editingName ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={tempName}
+                      onChange={(e) => setTempName(e.target.value)}
+                      className="bg-zinc-900 border border-zinc-700 px-3 py-1.5 text-sm font-mono text-white rounded outline-none"
+                      placeholder="Enter display name…"
+                    />
+                    <button
+                      onClick={handleSaveName}
+                      className="bg-emerald-500 text-black px-3 py-1.5 text-xs font-mono font-bold rounded"
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setEditingName(false)}
+                      className="text-zinc-500 hover:text-white text-xs font-mono"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-white font-mono">{displayName}</h2>
+                    <button
+                      onClick={() => { setTempName(displayName); setEditingName(true); }}
+                      className="text-[10px] font-mono text-zinc-500 hover:text-emerald-400 uppercase border border-zinc-800 px-2 py-0.5 rounded"
+                    >
+                      Edit
+                    </button>
+                  </div>
+                )}
+                <p className="text-xs text-zinc-400 font-mono mt-0.5 flex items-center gap-1.5">
+                  <Mail className="h-3 w-3 text-zinc-500" /> {email}
+                </p>
+              </div>
             </div>
 
-            <div className="flex-1">
-              {editingName ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={tempName}
-                    onChange={(e) => setTempName(e.target.value)}
-                    className="bg-zinc-900 border border-zinc-700 px-3 py-1.5 text-sm font-mono text-white rounded outline-none"
-                    placeholder="Enter display name…"
-                  />
-                  <button
-                    onClick={handleSaveName}
-                    className="bg-emerald-500 text-black px-3 py-1.5 text-xs font-mono font-bold rounded"
-                  >
-                    <Check className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => setEditingName(false)}
-                    className="text-zinc-500 hover:text-white text-xs font-mono"
-                  >
-                    Cancel
-                  </button>
+            {/* Account Details Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              <div className="border border-zinc-850 bg-zinc-900/50 p-4 rounded-lg flex items-center justify-between">
+                <div>
+                  <p className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest">Saved Travel Shots</p>
+                  <p className="text-2xl font-bold text-white font-mono mt-0.5">{loading ? '…' : shotCount}</p>
                 </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-white font-mono">{displayName}</h2>
-                  <button
-                    onClick={() => { setTempName(displayName); setEditingName(true); }}
-                    className="text-[10px] font-mono text-zinc-500 hover:text-emerald-400 uppercase border border-zinc-800 px-2 py-0.5 rounded"
-                  >
-                    Edit
-                  </button>
+                <BookImage className="h-6 w-6 text-emerald-500" />
+              </div>
+
+              <div className="border border-zinc-850 bg-zinc-900/50 p-4 rounded-lg flex items-center justify-between">
+                <div>
+                  <p className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest">Project Author</p>
+                  <p className="text-xs font-bold text-zinc-200 font-mono mt-1">Arya Hemant Tare</p>
                 </div>
-              )}
-              <p className="text-xs text-zinc-400 font-mono mt-0.5 flex items-center gap-1.5">
-                <Mail className="h-3 w-3 text-zinc-500" /> {email}
-              </p>
+                <ShieldCheck className="h-6 w-6 text-indigo-400" />
+              </div>
             </div>
           </div>
-
-          {/* Account Details Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-            <div className="border border-zinc-850 bg-zinc-900/50 p-4 rounded-lg flex items-center justify-between">
-              <div>
-                <p className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest">Saved Travel Shots</p>
-                <p className="text-2xl font-bold text-white font-mono mt-0.5">{loading ? '…' : shotCount}</p>
-              </div>
-              <BookImage className="h-6 w-6 text-emerald-500" />
-            </div>
-
-            <div className="border border-zinc-850 bg-zinc-900/50 p-4 rounded-lg flex items-center justify-between">
-              <div>
-                <p className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest">Project Author</p>
-                <p className="text-xs font-bold text-zinc-200 font-mono mt-1">Arya Hemant Tare</p>
-              </div>
-              <ShieldCheck className="h-6 w-6 text-indigo-400" />
-            </div>
-          </div>
-        </div>
+        </BorderGlow>
 
         {/* Quick Actions Panel */}
-        <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6 flex flex-col gap-4">
-          <h3 className="text-xs font-mono font-bold uppercase text-zinc-400 tracking-wider">
-            Quick Actions
-          </h3>
+        <BorderGlow
+          backgroundColor="#09090b"
+          borderRadius={16}
+          glowColor="160 84 39"
+          colors={['#c084fc', '#f472b6', '#38bdf8']}
+          edgeSensitivity={30}
+          glowRadius={30}
+          animated={false}
+        >
+          <div className="p-6 flex flex-col gap-4">
+            <h3 className="text-xs font-mono font-bold uppercase text-zinc-400 tracking-wider">
+              Quick Actions
+            </h3>
 
-          <div className="flex flex-col gap-2">
-            
-            {/* Direct Camera Button */}
-            <Link href="/camera" className="w-full">
-              <div className="flex items-center justify-between p-3.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-emerald-500/50 rounded-lg transition-all group">
+            <div className="flex flex-col gap-2">
+              
+              {/* Direct Camera Button */}
+              <Link href="/camera" className="w-full">
+                <div className="flex items-center justify-between p-3.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-emerald-500/50 rounded-lg transition-all group">
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                      <Camera className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-mono font-bold text-white uppercase">Open Camera &amp; AI Analysis</p>
+                      <p className="text-[10px] font-mono text-zinc-500">Capture photos and get instant Groq AI feedback</p>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-zinc-500 group-hover:text-emerald-400 transition-colors" />
+                </div>
+              </Link>
+
+              {/* Scrapbook Button */}
+              <Link href="/scrapbook" className="w-full">
+                <div className="flex items-center justify-between p-3.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-zinc-700 rounded-lg transition-all group">
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
+                      <BookImage className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-mono font-bold text-white uppercase">View My Scrapbook</p>
+                      <p className="text-[10px] font-mono text-zinc-500">Browse saved travel shots &amp; scores</p>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-zinc-500 group-hover:text-white transition-colors" />
+                </div>
+              </Link>
+
+              {/* Clear Local Cache */}
+              <button
+                onClick={handleClearCache}
+                className="w-full flex items-center justify-between p-3.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-red-900/50 rounded-lg transition-all group text-left"
+              >
                 <div className="flex items-center gap-3">
-                  <div className="h-9 w-9 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                    <Camera className="h-4 w-4" />
+                  <div className="h-9 w-9 rounded-lg bg-red-500/20 text-red-400 flex items-center justify-center">
+                    <Trash2 className="h-4 w-4" />
                   </div>
                   <div>
-                    <p className="text-xs font-mono font-bold text-white uppercase">Open Camera &amp; AI Analysis</p>
-                    <p className="text-[10px] font-mono text-zinc-500">Capture photos and get instant Groq AI feedback</p>
+                    <p className="text-xs font-mono font-bold text-white uppercase">Clear Local Storage Cache</p>
+                    <p className="text-[10px] font-mono text-zinc-500">Remove saved local scrapbook entries</p>
                   </div>
                 </div>
-                <ArrowRight className="h-4 w-4 text-zinc-500 group-hover:text-emerald-400 transition-colors" />
-              </div>
-            </Link>
+              </button>
 
-            {/* Scrapbook Button */}
-            <Link href="/scrapbook" className="w-full">
-              <div className="flex items-center justify-between p-3.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-zinc-700 rounded-lg transition-all group">
-                <div className="flex items-center gap-3">
-                  <div className="h-9 w-9 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
-                    <BookImage className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-mono font-bold text-white uppercase">View My Scrapbook</p>
-                    <p className="text-[10px] font-mono text-zinc-500">Browse saved travel shots &amp; scores</p>
-                  </div>
-                </div>
-                <ArrowRight className="h-4 w-4 text-zinc-500 group-hover:text-white transition-colors" />
-              </div>
-            </Link>
-
-            {/* Clear Local Cache */}
-            <button
-              onClick={handleClearCache}
-              className="flex items-center justify-between p-3.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-red-900/50 rounded-lg transition-all group text-left"
-            >
-              <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-lg bg-red-500/20 text-red-400 flex items-center justify-center">
-                  <Trash2 className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-mono font-bold text-white uppercase">Clear Local Storage Cache</p>
-                  <p className="text-[10px] font-mono text-zinc-500">Remove saved local scrapbook entries</p>
-                </div>
-              </div>
-            </button>
-
+            </div>
           </div>
-        </div>
+        </BorderGlow>
 
         {/* Sign Out Button */}
         <div className="pt-2">
