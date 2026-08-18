@@ -59,12 +59,12 @@ function isOutdoorPhoto(photo: FetchedPhoto): boolean {
   return !EXCLUDED_KEYWORDS.some((kw) => text.includes(kw));
 }
 
-// ── Wikimedia & Wikipedia Nearby Geosearch fetcher (1-2km radius) ─────────────
+// ── Wikimedia & Wikipedia Nearby Geosearch fetcher (1-3km radius) ─────────────
 async function fetchWikimediaPhotos(
   userLat: number,
   userLng: number,
   radiusKm: number,
-  limit = 30
+  limit = 100
 ): Promise<FetchedPhoto[]> {
   try {
     const radiusMeters = Math.min(Math.round(radiusKm * 1000), 10000);
@@ -331,14 +331,14 @@ export async function GET(request: Request) {
       });
     }
 
-    // Phase 3: Hotspot Cache Miss -> Fetch Fresh Photos on Demand with Progressive Radius Widening (1km -> 2km -> 5km -> 15km)
-    const radiusTiers = [1, 2, 5, 15];
+    // Phase 3: Hotspot Cache Miss -> Fetch Fresh Close-By Photos (1km -> 2km -> 3km max radius)
+    const radiusTiers = [1, 2, 3];
     let allPhotos: FetchedPhoto[] = [];
     for (const radius of radiusTiers) {
       
       const [wikiPhotos, flickrPhotos] = await Promise.all([
-        fetchWikimediaPhotos(latVal, lngVal, radius, 30),
-        fetchFlickrPhotos(latVal, lngVal, radius, 30)
+        fetchWikimediaPhotos(latVal, lngVal, radius, 100),
+        fetchFlickrPhotos(latVal, lngVal, radius, 50)
       ]);
 
       const combined = [...wikiPhotos, ...flickrPhotos];
@@ -355,9 +355,9 @@ export async function GET(request: Request) {
       // Apply the keyword exclusion filter at each tier
       const outdoorPhotos = uniquePhotos.filter(isOutdoorPhoto);
 
-      if (outdoorPhotos.length >= 10) {
+      if (outdoorPhotos.length >= 60) {
         allPhotos = outdoorPhotos;
-        break; // Stop widening once results are found (at least 10 outdoor photos)
+        break; // Stop widening once 60+ close-by photos are found
       } else {
         allPhotos = outdoorPhotos;
       }
@@ -420,8 +420,9 @@ export async function GET(request: Request) {
       console.error('[Write-Through Caching Exception]:', dbErr);
     }
 
-    // Map fetched photos to standard social posts list
-    const formattedSocialCards: SocialPost[] = allPhotos.map((photo, index) => ({
+    // Map fetched photos to standard social posts list (sorted by distance - closest first)
+    const sortedAllPhotos = [...allPhotos].sort((a, b) => a.distance - b.distance);
+    const formattedSocialCards: SocialPost[] = sortedAllPhotos.map((photo, index) => ({
       id: photo.url === bestPhoto ? cachedHotspotId : `live_post_${index}_${Date.now()}`,
       platform: index % 2 === 0 ? "instagram" as const : "pinterest" as const,
       user_handle: `@pinpic.explorer`,

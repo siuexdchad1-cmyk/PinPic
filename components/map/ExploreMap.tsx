@@ -517,11 +517,14 @@ export default function ExploreMap() {
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                   loading="lazy"
                 />
-                {photo.title && (
-                  <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[7px] font-mono text-zinc-300 px-1 py-0.5 truncate">
-                    {photo.title}
-                  </div>
-                )}
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent text-[7px] font-mono text-zinc-300 p-1 flex flex-col justify-end truncate">
+                  <span className="font-bold truncate text-white">{photo.title}</span>
+                  {photo.distance !== undefined && photo.distance !== null && (
+                    <span className="text-[6px] text-emerald-400 font-bold">
+                      {photo.distance < 1000 ? `${Math.round(photo.distance)}m away` : `${(photo.distance / 1000).toFixed(1)}km away`}
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
