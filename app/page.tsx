@@ -134,30 +134,34 @@ export default function LandingPage() {
       {/* ── Navbar ──────────────────────────────────────────────────────── */}
       <header className="border-b border-zinc-900 sticky top-0 z-50 bg-black">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-          <div className="flex items-center gap-2">
-            <MapPin className="h-4 w-4 text-white" strokeWidth={2.5} />
-            <span className="text-sm font-semibold tracking-tight">PinPic</span>
-          </div>
+          <Link href="/" className="flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-emerald-500" strokeWidth={2.5} />
+            <span className="text-sm font-semibold tracking-tight font-mono">PinPic</span>
+          </Link>
 
-          <div className="hidden md:flex items-center gap-8">
-            {['Features', 'Map', 'Camera', 'Scrapbook'].map((item) => (
-              <span
-                key={item}
-                className="text-xs font-mono uppercase tracking-widest text-zinc-600 hover:text-white transition-colors duration-150 cursor-pointer"
-              >
-                {item}
-              </span>
-            ))}
+          <div className="hidden md:flex items-center gap-8 font-mono text-xs uppercase tracking-widest">
+            <a href="#features" className="text-zinc-400 hover:text-white transition-colors">
+              Features
+            </a>
+            <Link href="/explore" className="text-zinc-400 hover:text-white transition-colors">
+              Map
+            </Link>
+            <Link href="/camera" className="text-zinc-400 hover:text-white transition-colors">
+              Camera
+            </Link>
+            <Link href="/scrapbook" className="text-zinc-400 hover:text-white transition-colors">
+              Scrapbook
+            </Link>
           </div>
 
           <nav className="flex items-center gap-3">
             <Link
               href="/login"
-              className="text-xs font-mono text-zinc-500 hover:text-white transition-colors duration-150 tracking-wide"
+              className="text-xs font-mono text-zinc-400 hover:text-white transition-colors duration-150 tracking-wide"
             >
               Sign in
             </Link>
-            <Link href="/signup">
+            <Link href="/camera">
               <button className="bg-white text-black font-medium text-xs px-4 h-8 rounded-md hover:bg-zinc-200 transition-all duration-150 active:scale-[0.99] tracking-tight">
                 Get started
               </button>
@@ -269,7 +273,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── Feature Index ───────────────────────────────────────────────── */}
-      <section className="border-t border-zinc-900">
+      <section id="features" className="border-t border-zinc-900 scroll-mt-20">
         <div className="mx-auto max-w-6xl px-6 py-20">
 
           <div className="flex items-center gap-6 mb-12">
