@@ -4,8 +4,8 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { 
-  ArrowLeft, Sliders, AlertCircle, RefreshCw, LayoutGrid, 
-  Check, Camera, X, Search, Sparkles, Image as ImageIcon,
+  ArrowLeft, AlertCircle, RefreshCw, LayoutGrid, 
+  Check, X, Search, Sparkles, Image as ImageIcon,
   RotateCcw, ChevronRight, Compass, Star
 } from 'lucide-react';
 import type { CameraState, ProcessShotResponse, GpsCoordinates } from '@/lib/types';
@@ -18,11 +18,9 @@ export default function CameraPage() {
   
   // Viewport Refs
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const lastFetchTimeRef = useRef<number>(0);
-  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Core State
   const [camState, setCamState] = useState<CameraState>('idle');
@@ -30,219 +28,24 @@ export default function CameraPage() {
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [result, setResult] = useState<ProcessShotResponse | null>(null);
   const [socialPosts, setSocialPosts] = useState<SocialPost[]>([]);
-  const [emptyMessage, setEmptyMessage] = useState<string>('No outdoor inspiration photos found near this location yet.');
+  const [emptyMessage, setEmptyMessage] = useState<string>('No inspiration photos found near this location yet.');
 
-  // Reference Stencil & Interface variables
+  // Selected inspiration reference (optional tag)
   const [selectedPost, setSelectedPost] = useState<SocialPost | null>(null);
-  const [overlayOpacity, setOverlayOpacity] = useState<number>(0.35);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
 
   // Sidebar toggle state
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
 
-  // Manual Location Search Override variables
+  // Manual Location Search Override
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isManualOverride, setIsManualOverride] = useState<boolean>(false);
 
-  // HUD & Sensors
-  const [showControls, setShowControls] = useState<boolean>(true);
-  const [isPoseGuideActive, setIsPoseGuideActive] = useState<boolean>(false);
-  const [poseMatch, setPoseMatch] = useState<number | null>(null);
-  const [isPoseLoading, setIsPoseLoading] = useState<boolean>(false);
+  // Shutter & Flash effects
   const [shutterPressing, setShutterPressing] = useState<boolean>(false);
   const [flashActive, setFlashActive] = useState<boolean>(false);
-  
-  const poseLoopRef = useRef<number | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const posenetNetRef = useRef<any>(null);
 
-  // ── Auto-hide Controls Bar Interface ──────────────────────────────────────
-  const resetControlsTimeout = useCallback(() => {
-    setShowControls(true);
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-    controlsTimeoutRef.current = setTimeout(() => {
-      if (['streaming', 'hotspot-found'].includes(camState) && !sidebarOpen) {
-        setShowControls(false);
-      }
-    }, 6000);
-  }, [camState, sidebarOpen]);
-
-  useEffect(() => {
-    resetControlsTimeout();
-    return () => {
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
-    };
-  }, [camState, resetControlsTimeout]);
-
-  // ── Clean Viewport (Grid Removed per user request) ─────────────────────────
-  const clearCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }, []);
-
-  // ── Lazy-Load PoseNet & TensorFlow.js ─────────────────────────────────────
-  const togglePoseGuide = async () => {
-    if (isPoseGuideActive) {
-      stopPoseTracking();
-      return;
-    }
-
-    setIsPoseLoading(true);
-    try {
-      const loadScript = (src: string) => {
-        return new Promise<void>((resolve, reject) => {
-          if (document.querySelector(`script[src="${src}"]`)) {
-            resolve();
-            return;
-          }
-          const s = document.createElement('script');
-          s.src = src;
-          s.onload = () => resolve();
-          s.onerror = () => reject();
-          document.head.appendChild(s);
-        });
-      };
-
-      await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js');
-      await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet@2.2.2/dist/posenet.min.js');
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const windowAny = window as any;
-      if (!posenetNetRef.current && windowAny.posenet) {
-        posenetNetRef.current = await windowAny.posenet.load({
-          architecture: 'MobileNetV1',
-          outputStride: 16,
-          inputResolution: { width: 257, height: 200 },
-          multiplier: 0.5
-        });
-      }
-
-      setIsPoseGuideActive(true);
-      setIsPoseLoading(false);
-      
-      const canvas = canvasRef.current;
-      if (canvas && videoRef.current) {
-        canvas.width = videoRef.current.videoWidth || canvas.offsetWidth || 640;
-        canvas.height = videoRef.current.videoHeight || canvas.offsetHeight || 480;
-      }
-      runPoseLoop();
-    } catch (err) {
-      console.error("Failed to load PoseNet:", err);
-      toast.error("Failed to load Pose Guide.");
-      setIsPoseLoading(false);
-    }
-  };
-
-  const stopPoseTracking = () => {
-    setIsPoseGuideActive(false);
-    setPoseMatch(null);
-    if (poseLoopRef.current) {
-      cancelAnimationFrame(poseLoopRef.current);
-      poseLoopRef.current = null;
-    }
-    clearCanvas();
-  };
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const calculatePoseMatch = (keypoints: any[]) => {
-    const leftShoulder = keypoints.find((k) => k.part === 'leftShoulder');
-    const rightShoulder = keypoints.find((k) => k.part === 'rightShoulder');
-    const nose = keypoints.find((k) => k.part === 'nose');
-
-    if (!leftShoulder || !rightShoulder || !nose || leftShoulder.score < 0.4 || rightShoulder.score < 0.4) {
-      return 52; 
-    }
-
-    const canvas = canvasRef.current;
-    if (!canvas) return 60;
-    
-    const centerX = canvas.width / 2;
-    const noseDist = Math.abs(nose.position.x - centerX);
-    const centeringScore = Math.max(0, 100 - (noseDist / (centerX * 0.8)) * 100);
-
-    const diffY = Math.abs(leftShoulder.position.y - rightShoulder.position.y);
-    const balanceScore = Math.max(0, 100 - diffY * 3.5);
-
-    const alignment = Math.round(centeringScore * 0.4 + balanceScore * 0.6);
-    return Math.min(98, Math.max(52, alignment));
-  };
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const drawSkeleton = (keypoints: any[], ctx: CanvasRenderingContext2D) => {
-    ctx.strokeStyle = '#10b981';
-    ctx.fillStyle = '#10b981';
-    ctx.lineWidth = 2;
-
-    keypoints.forEach((kp) => {
-      if (kp.score > 0.45 && ['nose', 'leftShoulder', 'rightShoulder', 'leftElbow', 'rightElbow', 'leftWrist', 'rightWrist'].includes(kp.part)) {
-        ctx.beginPath();
-        ctx.arc(kp.position.x, kp.position.y, 4, 0, 2 * Math.PI);
-        ctx.fill();
-      }
-    });
-
-    const drawSegment = (p1Name: string, p2Name: string) => {
-      const p1 = keypoints.find((k) => k.part === p1Name);
-      const p2 = keypoints.find((k) => k.part === p2Name);
-      if (p1 && p2 && p1.score > 0.45 && p2.score > 0.45) {
-        ctx.beginPath();
-        ctx.moveTo(p1.position.x, p1.position.y);
-        ctx.lineTo(p2.position.x, p2.position.y);
-        ctx.stroke();
-      }
-    };
-
-    drawSegment('leftShoulder', 'rightShoulder');
-    drawSegment('leftShoulder', 'leftElbow');
-    drawSegment('leftElbow', 'leftWrist');
-    drawSegment('rightShoulder', 'rightElbow');
-    drawSegment('rightElbow', 'rightWrist');
-  };
-
-  const runPoseLoop = () => {
-    if (!videoRef.current || !canvasRef.current) return;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const net = posenetNetRef.current;
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-
-    const track = async () => {
-      if (video.paused || video.ended) return;
-
-      try {
-        const pose = await net.estimateSinglePose(video, {
-          flipHorizontal: false
-        });
-
-        if (ctx && canvas) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          drawSkeleton(pose.keypoints, ctx);
-          const score = calculatePoseMatch(pose.keypoints);
-          setPoseMatch(score);
-        }
-      } catch (err) {
-        console.warn("Pose tracking frame error", err);
-      }
-
-      if (posenetNetRef.current) {
-        setTimeout(() => {
-          poseLoopRef.current = requestAnimationFrame(track);
-        }, 75);
-      }
-    };
-
-    poseLoopRef.current = requestAnimationFrame(track);
-  };
-
-  // ── Fetch local suggestion posts near coordinates ─────────────────────────
+  // ── Fetch nearby inspiration photos ──────────────────────────────────────
   const fetchSocialPosts = useCallback(async (latitude: number, longitude: number) => {
     const now = Date.now();
     if (now - lastFetchTimeRef.current < 3000) return;
@@ -254,9 +57,7 @@ export default function CameraPage() {
       const data: LocationSearchResult = await res.json();
       if (data && data.posts) {
         setSocialPosts(data.posts);
-        if (data.message) {
-          setEmptyMessage(data.message);
-        }
+        if (data.message) setEmptyMessage(data.message);
         if (!selectedPost && data.posts.length > 0) {
           setSelectedPost(data.posts[0]);
         }
@@ -266,7 +67,7 @@ export default function CameraPage() {
     }
   }, [selectedPost]);
 
-  // ── Trigger manual location search ────────────────────────────────────────
+  // ── Manual Location Search ────────────────────────────────────────────────
   const handleManualSearch = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
@@ -281,14 +82,12 @@ export default function CameraPage() {
       const data: LocationSearchResult = await res.json();
       if (data && data.posts) {
         setSocialPosts(data.posts);
-        if (data.message) {
-          setEmptyMessage(data.message);
-        }
+        if (data.message) setEmptyMessage(data.message);
         if (data.posts.length > 0) {
           setSelectedPost(data.posts[0]);
-          toast.success(`Loaded inspiration for: ${searchQuery}`);
+          toast.success(`Loaded photos for: ${searchQuery}`);
         } else {
-          toast.error("No inspiration photos found for this location.");
+          toast.error("No photos found for this location.");
         }
       }
     } catch {
@@ -296,7 +95,7 @@ export default function CameraPage() {
     }
   }, [searchQuery]);
 
-  // ── Restore GPS auto-geolocation suggestions ──────────────────────────────
+  // ── Restore Auto GPS ──────────────────────────────────────────────────────
   const clearManualOverride = useCallback(async () => {
     setIsManualOverride(false);
     setSearchQuery('');
@@ -305,7 +104,7 @@ export default function CameraPage() {
     fetchSocialPosts(loc.latitude, loc.longitude);
   }, [fetchSocialPosts]);
 
-  // ── Start browser camera video streaming ──────────────────────────────────
+  // ── Start Camera Stream ───────────────────────────────────────────────────
   async function startCamera() {
     setCamState('requesting-permissions');
     setErrorMsg('');
@@ -341,7 +140,7 @@ export default function CameraPage() {
     fetchSocialPosts(coords.latitude, coords.longitude);
   }
 
-  // ── Flip Facing Mode Camera ───────────────────────────────────────────────
+  // ── Flip Lens ─────────────────────────────────────────────────────────────
   const flipCamera = async () => {
     const nextMode = facingMode === 'environment' ? 'user' : 'environment';
     setFacingMode(nextMode);
@@ -363,7 +162,7 @@ export default function CameraPage() {
     }
   };
 
-  // ── Real-Time Location watch ──────────────────────────────────────────────
+  // ── Live Location Watcher ─────────────────────────────────────────────────
   useEffect(() => {
     if (['streaming', 'hotspot-found'].includes(camState)) {
       if ('geolocation' in navigator) {
@@ -400,11 +199,10 @@ export default function CameraPage() {
     };
   }, [camState, fetchSocialPosts, isManualOverride, gps]);
 
-  // ── Capture Photo & Send to Groq Vision ────────────────────────────────────
+  // ── Capture & Analyze with Groq AI ───────────────────────────────────────
   async function captureFrame() {
     if (!videoRef.current) return;
     
-    // Shutter flash & haptic effect
     setShutterPressing(true);
     setFlashActive(true);
     setTimeout(() => setFlashActive(false), 150);
@@ -464,9 +262,6 @@ export default function CameraPage() {
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
       }
-      if (poseLoopRef.current) {
-        cancelAnimationFrame(poseLoopRef.current);
-      }
     };
   }, []);
 
@@ -474,11 +269,9 @@ export default function CameraPage() {
   const activeLocationName = selectedPost?.title || (isManualOverride ? searchQuery : 'Local GPS Area');
 
   return (
-    <div 
-      className="fixed inset-0 w-full h-full bg-black text-white select-none overflow-hidden font-sans flex flex-col"
-      onClick={resetControlsTimeout}
-    >
-      {/* ── 0. Permissions Onboarding Wizard ───────────────────────────── */}
+    <div className="fixed inset-0 w-full h-full bg-black text-white select-none overflow-hidden font-sans flex flex-col">
+
+      {/* ── 0. Permissions Setup Wizard ───────────────────────────────────── */}
       {camState === 'idle' && (
         <PermissionsWizard
           onComplete={(coords) => startCameraWithCoords(coords)}
@@ -486,7 +279,7 @@ export default function CameraPage() {
         />
       )}
 
-      {/* ── Error Banner ────────────────────────────────────────────────── */}
+      {/* ── Error Screen ──────────────────────────────────────────────────── */}
       {camState === 'error' && (
         <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center p-6 text-center">
           <AlertCircle className="h-10 w-10 text-red-500 mb-4" />
@@ -501,14 +294,14 @@ export default function CameraPage() {
         </div>
       )}
 
-      {/* ── 1. Shutter camera flash animation overlay ─────────────────────────── */}
+      {/* ── 1. Camera Flash Animation ─────────────────────────────────────── */}
       <div 
         className={`absolute inset-0 bg-white z-40 transition-opacity duration-150 pointer-events-none ${
           flashActive ? 'opacity-100' : 'opacity-0'
         }`}
       />
 
-      {/* ── 2. Full-Screen Normal Clean Viewfinder Camera Feed ────────────────────── */}
+      {/* ── 2. Clean Normal Full-Screen Camera Feed ────────────────────────── */}
       <div className="absolute inset-0 w-full h-full bg-black z-0">
         <video
           ref={videoRef}
@@ -517,39 +310,16 @@ export default function CameraPage() {
           muted
           autoPlay
           style={{ display: isStreaming ? 'block' : 'none', transform: facingMode === 'user' ? 'scaleX(-1)' : 'none' }}
-          aria-label="Live camera preview feed"
+          aria-label="Live camera feed"
         />
-
-        {/* Clean Canvas (used only for PoseNet skeleton when active, no grid) */}
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 w-full h-full pointer-events-none z-10"
-          style={{ display: isStreaming ? 'block' : 'none' }}
-          aria-hidden="true"
-        />
-
-        {/* Reference Stencil Overlay (Optional when selected) */}
-        {isStreaming && selectedPost && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={selectedPost.inspo_image_url}
-            alt="Reference guide outline overlay"
-            className="absolute inset-0 w-full h-full object-cover pointer-events-none transition-opacity duration-150 z-10 select-none"
-            style={{ opacity: overlayOpacity, mixBlendMode: 'difference' }}
-          />
-        )}
       </div>
 
-      {/* ── 3. Floating Interactive Overlay HUD Controls ───────────────────────── */}
+      {/* ── 3. Simple Camera Interface Controls ───────────────────────────── */}
       {isStreaming && (
         <div className="absolute inset-0 pointer-events-none flex flex-col justify-between z-20">
           
-          {/* Top Bar Floating Panel */}
-          <div 
-            className={`w-full bg-gradient-to-b from-black/90 via-black/40 to-transparent pt-5 pb-8 px-4 transition-all duration-300 pointer-events-auto ${
-              showControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'
-            }`}
-          >
+          {/* Top Navigation Bar */}
+          <div className="w-full bg-gradient-to-b from-black/80 via-black/30 to-transparent pt-5 pb-8 px-4 pointer-events-auto">
             <div className="max-w-md mx-auto w-full flex items-center justify-between gap-3">
               
               {/* Back Button */}
@@ -561,91 +331,29 @@ export default function CameraPage() {
                 <ArrowLeft className="h-4 w-4 text-white" />
               </button>
 
-              {/* Location Name Header */}
+              {/* Location Badge */}
               <div className="flex-1 flex flex-col items-center text-center px-2">
                 <span className="text-[10px] font-mono tracking-widest text-emerald-400 font-bold uppercase truncate max-w-[180px]">
                   {activeLocationName}
                 </span>
-                <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest mt-0.5">
-                  ● CLEAN VIEWPORT ACTIVE
-                </span>
               </div>
 
-              {/* Top Right Action Buttons: Toggle Suggestions Sidebar + Pose Guide */}
-              <div className="flex gap-2">
-                {/* Suggestions Sidebar Button */}
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="h-10 px-3 bg-emerald-500 hover:bg-emerald-400 text-black border border-black font-mono font-bold text-[9px] uppercase tracking-widest flex items-center gap-1.5 rounded-lg transition-all active:scale-95"
-                  title="Open Framing Suggestions Sidebar"
-                >
-                  <ImageIcon className="h-3.5 w-3.5" />
-                  Suggestions ({socialPosts.length})
-                </button>
-
-                {/* Pose Guide Toggle */}
-                <button
-                  onClick={togglePoseGuide}
-                  disabled={isPoseLoading}
-                  className={`h-10 px-2.5 border rounded-lg flex items-center gap-1 text-[9px] font-mono uppercase font-bold transition-all ${
-                    isPoseGuideActive 
-                      ? 'bg-emerald-500 border-emerald-600 text-black' 
-                      : 'border-zinc-800 bg-black/80 hover:bg-zinc-900 text-white'
-                  }`}
-                  title="Toggle Pose Guide"
-                >
-                  <Camera className="h-3.5 w-3.5" />
-                  {isPoseLoading ? '…' : 'Pose'}
-                </button>
-              </div>
+              {/* Suggestions Sidebar Button */}
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="h-10 px-3 bg-emerald-500 hover:bg-emerald-400 text-black border border-black font-mono font-bold text-[9px] uppercase tracking-widest flex items-center gap-1.5 rounded-lg transition-all active:scale-95"
+                title="Open Nearby Photos Sidebar"
+              >
+                <ImageIcon className="h-3.5 w-3.5" />
+                Nearby Photos ({socialPosts.length})
+              </button>
             </div>
           </div>
 
-          {/* Center Pose alignment feedback banner */}
-          <div className="flex-1 flex items-center justify-center p-4">
-            {isPoseGuideActive && (
-              <div className="bg-black/90 border border-emerald-900 px-3 py-1.5 font-mono text-[9px] text-emerald-400 uppercase tracking-widest animate-pulse flex items-center gap-1.5 rounded shadow-xl">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block animate-ping" />
-                POSE STENCIL: {poseMatch !== null ? `${poseMatch}% ALIGNED` : 'DETECTING POSE…'}
-              </div>
-            )}
-          </div>
-
-          {/* Bottom Control Bar */}
-          <div 
-            className={`w-full bg-gradient-to-t from-black/95 via-black/50 to-transparent pb-8 pt-12 px-4 transition-all duration-300 pointer-events-auto ${
-              showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
-            }`}
-          >
+          {/* Bottom Controls Bar */}
+          <div className="w-full bg-gradient-to-t from-black/90 via-black/40 to-transparent pb-8 pt-12 px-4 pointer-events-auto">
             <div className="max-w-md mx-auto w-full flex flex-col gap-4">
               
-              {/* Opacity slider when reference selected */}
-              {selectedPost && (
-                <div className="flex items-center gap-3 bg-black/85 border border-zinc-800 px-3 py-2 rounded-lg animate-slide-up self-center w-56 shadow-md">
-                  <Sliders className="h-3.5 w-3.5 text-zinc-500" />
-                  <input
-                    type="range"
-                    min="0.0"
-                    max="1.0"
-                    step="0.05"
-                    value={overlayOpacity}
-                    onChange={(e) => setOverlayOpacity(parseFloat(e.target.value))}
-                    className="w-full h-1 bg-zinc-800 rounded appearance-none cursor-pointer accent-white"
-                    title="Stencil opacity"
-                  />
-                  <span className="text-[9px] font-mono text-zinc-400 w-7 text-right">
-                    {Math.round(overlayOpacity * 100)}%
-                  </span>
-                  <button
-                    onClick={() => setSelectedPost(null)}
-                    className="text-zinc-500 hover:text-white"
-                    title="Clear reference stencil"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              )}
-
               {/* Shutter capture row */}
               <div className="flex items-center justify-between w-full px-6">
                 
@@ -665,12 +373,12 @@ export default function CameraPage() {
                   className={`h-20 w-20 rounded-full border-4 border-emerald-500 bg-black/30 flex items-center justify-center cursor-pointer relative transition-all duration-150 ${
                     shutterPressing ? 'scale-90 bg-emerald-950/20' : 'hover:bg-black/60 active:scale-95'
                   }`}
-                  title="Capture Photo & Analyze with Groq AI"
+                  title="Take Photo"
                 >
                   <div className="h-14 w-14 rounded-full bg-white select-none pointer-events-none" />
                 </button>
 
-                {/* Camera Lens Swap Button (Right) */}
+                {/* Lens Swap Camera Flip Button (Right) */}
                 <button
                   onClick={flipCamera}
                   className="h-12 w-12 border border-zinc-800 hover:border-zinc-700 bg-black/80 flex items-center justify-center rounded-full active:rotate-180 transition-all duration-300 text-zinc-400 hover:text-white"
@@ -680,10 +388,9 @@ export default function CameraPage() {
                 </button>
               </div>
 
-              {/* Quick status bar */}
               <div className="text-center">
                 <p className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">
-                  Tap shutter to send shot directly to Groq AI Analysis
+                  Tap shutter to take photo &amp; get Groq AI analysis
                 </p>
               </div>
             </div>
@@ -691,7 +398,7 @@ export default function CameraPage() {
         </div>
       )}
 
-      {/* ── 4. Collapsible Image Suggestions Sidebar (Drawer) ───────────────────── */}
+      {/* ── 4. Collapsible Nearby Photos Sidebar Drawer ───────────────────────── */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-sm animate-fade-in">
           <div className="w-full max-w-xs sm:max-w-sm bg-zinc-950 border-l border-zinc-800 h-full flex flex-col justify-between shadow-2xl animate-slide-left pointer-events-auto">
@@ -701,7 +408,7 @@ export default function CameraPage() {
               <div className="flex items-center gap-2">
                 <ImageIcon className="h-4 w-4 text-emerald-500" />
                 <span className="text-xs font-mono font-bold text-white uppercase tracking-widest">
-                  Framing Suggestions
+                  Nearby Photos (1-2 km)
                 </span>
               </div>
               <button
@@ -712,10 +419,10 @@ export default function CameraPage() {
               </button>
             </div>
 
-            {/* Sidebar Content (Search + Photo Cards) */}
+            {/* Sidebar Body */}
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
               
-              {/* Location Mode & Search Input */}
+              {/* Location Controls */}
               <div className="flex flex-col gap-2">
                 <div className="flex bg-zinc-900 p-1 rounded-lg">
                   <button
@@ -757,11 +464,11 @@ export default function CameraPage() {
                 )}
               </div>
 
-              {/* Suggestions List */}
+              {/* Photos List */}
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] font-mono uppercase text-zinc-500 tracking-wider">
-                    Nearby Blueprints (1-2 km)
+                    Location Inspiration
                   </span>
                   <span className="text-[9px] font-mono text-emerald-400">
                     {socialPosts.length} Found
@@ -778,7 +485,7 @@ export default function CameraPage() {
                           key={post.id}
                           onClick={() => {
                             setSelectedPost(isSelected ? null : post);
-                            toast.success(isSelected ? 'Cleared reference stencil' : `Selected stencil: ${post.title || 'Landmark'}`);
+                            toast.success(isSelected ? 'Cleared reference' : `Selected location: ${post.title || 'Landmark'}`);
                           }}
                           className={`aspect-square border rounded-lg overflow-hidden cursor-pointer relative bg-zinc-900 group transition-all ${
                             isSelected ? 'border-emerald-500 ring-2 ring-emerald-500' : 'border-zinc-800 hover:border-zinc-600'
@@ -787,7 +494,7 @@ export default function CameraPage() {
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={post.inspo_image_url}
-                            alt="Reference blueprint"
+                            alt="Nearby photo reference"
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                             loading="lazy"
                           />
@@ -803,11 +510,6 @@ export default function CameraPage() {
                               </p>
                             )}
                           </div>
-                          {isSelected && (
-                            <div className="absolute top-1 right-1 bg-emerald-500 text-black text-[7px] font-mono font-bold px-1 rounded">
-                              ACTIVE
-                            </div>
-                          )}
                         </div>
                       );
                     })}
@@ -815,7 +517,7 @@ export default function CameraPage() {
                 ) : (
                   <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 text-center">
                     <Compass className="h-6 w-6 text-zinc-600 mx-auto mb-2" />
-                    <p className="text-xs font-mono text-zinc-400 mb-1">No framing blueprints found</p>
+                    <p className="text-xs font-mono text-zinc-400 mb-1">No nearby photos found</p>
                     <p className="text-[9px] font-mono text-zinc-600 uppercase">{emptyMessage}</p>
                   </div>
                 )}
@@ -825,13 +527,13 @@ export default function CameraPage() {
             {/* Sidebar Footer */}
             <div className="p-4 border-t border-zinc-800 flex justify-between items-center">
               <span className="text-[8px] font-mono text-zinc-600 uppercase tracking-wider">
-                PinPic Suggestions · Arya Hemant Tare
+                PinPic · Arya Hemant Tare
               </span>
               <button
                 onClick={() => setSidebarOpen(false)}
                 className="bg-emerald-500 text-black text-[9px] font-mono font-bold uppercase px-3 py-1.5 rounded-lg flex items-center gap-1"
               >
-                Done <ChevronRight className="h-3 w-3" />
+                Close <ChevronRight className="h-3 w-3" />
               </button>
             </div>
           </div>
@@ -849,7 +551,7 @@ export default function CameraPage() {
               Groq AI Analyzing Photo…
             </p>
             <p className="text-[10px] font-mono text-zinc-500 mt-1">
-              Evaluating composition alignment, lighting &amp; actionable improvements
+              Evaluating shot quality &amp; actionable improvements
             </p>
           </div>
           <div className="w-56 h-1 bg-zinc-900 rounded-full overflow-hidden">
@@ -889,7 +591,7 @@ export default function CameraPage() {
                   {result.matchAccuracy !== null ? `${result.matchAccuracy}%` : '88%'}
                 </p>
                 <p className="text-[9px] font-mono text-zinc-400 mt-1 uppercase">
-                  {selectedPost?.title ? `Matched with ${selectedPost.title}` : 'Free-Form Capture'}
+                  {selectedPost?.title ? `Location: ${selectedPost.title}` : 'Captured Travel Photo'}
                 </p>
               </div>
               <div className="h-16 w-16 rounded-full border-4 border-emerald-500 flex items-center justify-center">
@@ -944,7 +646,7 @@ export default function CameraPage() {
               </button>
               <button
                 onClick={() => router.push('/scrapbook')}
-                className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black py-3.5 text-[10px] font-mono font-bold uppercase tracking-widest rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 border-2 border-black"
+                className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black py-3.5 text-[10px] font-mono font-bold uppercase tracking-widest rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 border-2 border-black font-bold"
               >
                 <Check className="h-4 w-4" />
                 Save Shot
