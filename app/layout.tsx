@@ -60,11 +60,14 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <head>
+        {/* Harmond ExtraBold Expanded display font import */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,900&family=Cinzel+Decorative:wght@700;900&display=swap" rel="stylesheet" />
         {/* PWA iOS icons */}
         <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-192x192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        {/* Service Worker registration — only in production (PWA disabled in dev) */}
         <script
           dangerouslySetInnerHTML={{
             __html: `

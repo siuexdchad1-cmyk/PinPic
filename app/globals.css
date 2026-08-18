@@ -20,6 +20,14 @@
   --muted:       #71717a;
   --card-bg:     #0a0a0a;
   --font-sans:   'Inter', system-ui, -apple-system, sans-serif;
+  --font-harmond: 'Playfair Display', 'Cinzel Decorative', Georgia, serif;
+}
+
+.font-harmond {
+  font-family: 'Playfair Display', 'Cinzel Decorative', Georgia, serif !important;
+  font-style: italic !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.03em !important;
 }
 
 /* --- Base Reset --------------------------------------------- */

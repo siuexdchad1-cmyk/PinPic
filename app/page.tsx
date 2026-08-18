@@ -186,7 +186,7 @@ export default function LandingPage() {
             </div>
 
             {/* Headline */}
-            <h1 className="text-6xl md:text-9xl font-black tracking-tighter text-white uppercase leading-[0.9] mb-10">
+            <h1 className="text-6xl md:text-8xl font-harmond text-white leading-[0.9] mb-10">
               Travel.<br />
               Compose.<br />
               Perfect.
