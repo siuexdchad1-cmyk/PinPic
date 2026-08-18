@@ -59,48 +59,90 @@ function isOutdoorPhoto(photo: FetchedPhoto): boolean {
   return !EXCLUDED_KEYWORDS.some((kw) => text.includes(kw));
 }
 
-// ── Wikimedia Commons Geosearch fetcher ──────────────────────────────────────
+// ── Wikimedia & Wikipedia Nearby Geosearch fetcher (1-2km radius) ─────────────
 async function fetchWikimediaPhotos(
   userLat: number,
   userLng: number,
   radiusKm: number,
-  limit = 24
+  limit = 30
 ): Promise<FetchedPhoto[]> {
   try {
-    const radiusMeters = Math.min(radiusKm * 1000, 10000);
-    const wikiGeosearchUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggsnamespace=6&ggsradius=${radiusMeters}&ggscoord=${userLat}|${userLng}&ggslimit=${limit}&prop=imageinfo|coordinates&iiprop=url&format=json&origin=*`;
-    const wikiRes = await fetch(wikiGeosearchUrl, {
-      headers: { 'User-Agent': 'PinPic/1.0 (support@pinpic.travel)' },
-      next: { revalidate: 3600 }
-    });
-    if (!wikiRes.ok) return [];
-
-    const wikiData = await wikiRes.json();
-    if (!wikiData.query?.pages) return [];
-    
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pages = Object.values(wikiData.query.pages) as any[];
+    const radiusMeters = Math.min(Math.round(radiusKm * 1000), 10000);
     const result: FetchedPhoto[] = [];
+    const seenUrls = new Set<string>();
+
+    // 1. Wikipedia PageImages Geosearch (Landmarks, Parks, Monuments within radius)
+    const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=geosearch&ggscoord=${userLat}|${userLng}&ggsradius=${radiusMeters}&ggslimit=${limit}&prop=pageimages|coordinates|extracts&piprop=thumbnail&pithumbsize=800&exintro=1&explaintext=1&format=json&origin=*`;
     
-    for (const p of pages) {
-      const url = p.imageinfo?.[0]?.url;
-      const coords = p.coordinates?.[0];
-      if (!url || !url.startsWith('http') || !coords) continue;
-      
-      const photoLat = parseFloat(coords.lat);
-      const photoLng = parseFloat(coords.lon);
-      const distance = haversineDistance(userLat, userLng, photoLat, photoLng);
-      
-      result.push({
-        url,
-        source: 'wikimedia' as const,
-        lat: photoLat,
-        lng: photoLng,
-        distance,
-        title: p.title || ''
-      });
+    // 2. Commons Geosearch (Direct geotagged photos within radius)
+    const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggsnamespace=6&ggsradius=${radiusMeters}&ggscoord=${userLat}|${userLng}&ggslimit=${limit}&prop=imageinfo|coordinates&iiprop=url&format=json&origin=*`;
+
+    const [wikiRes, commonsRes] = await Promise.all([
+      fetch(wikiUrl, { headers: { 'User-Agent': 'PinPic/1.0 (support@pinpic.travel)' }, next: { revalidate: 3600 } }).catch(() => null),
+      fetch(commonsUrl, { headers: { 'User-Agent': 'PinPic/1.0 (support@pinpic.travel)' }, next: { revalidate: 3600 } }).catch(() => null)
+    ]);
+
+    // Parse Wikipedia PageImages
+    if (wikiRes && wikiRes.ok) {
+      const wikiData = await wikiRes.json();
+      if (wikiData.query?.pages) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pages = Object.values(wikiData.query.pages) as any[];
+        for (const p of pages) {
+          const thumbUrl = p.thumbnail?.source;
+          const coords = p.coordinates?.[0];
+          if (!thumbUrl || !thumbUrl.startsWith('http')) continue;
+
+          const photoLat = coords ? parseFloat(coords.lat) : userLat;
+          const photoLng = coords ? parseFloat(coords.lon) : userLng;
+          const distance = haversineDistance(userLat, userLng, photoLat, photoLng);
+
+          if (!seenUrls.has(thumbUrl)) {
+            seenUrls.add(thumbUrl);
+            result.push({
+              url: thumbUrl,
+              source: 'wikimedia',
+              lat: photoLat,
+              lng: photoLng,
+              distance,
+              title: p.title || '',
+              caption: p.extract ? p.extract.slice(0, 150) + '…' : ''
+            });
+          }
+        }
+      }
     }
-    
+
+    // Parse Commons File Geosearch
+    if (commonsRes && commonsRes.ok) {
+      const commonsData = await commonsRes.json();
+      if (commonsData.query?.pages) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pages = Object.values(commonsData.query.pages) as any[];
+        for (const p of pages) {
+          const url = p.imageinfo?.[0]?.url;
+          const coords = p.coordinates?.[0];
+          if (!url || !url.startsWith('http') || !coords) continue;
+
+          const photoLat = parseFloat(coords.lat);
+          const photoLng = parseFloat(coords.lon);
+          const distance = haversineDistance(userLat, userLng, photoLat, photoLng);
+
+          if (!seenUrls.has(url)) {
+            seenUrls.add(url);
+            result.push({
+              url,
+              source: 'wikimedia',
+              lat: photoLat,
+              lng: photoLng,
+              distance,
+              title: (p.title || '').replace(/^File:/, '').replace(/\.(jpg|png|jpeg)$/i, '')
+            });
+          }
+        }
+      }
+    }
+
     return result;
   } catch (err) {
     console.error('[Wikimedia Fetch Failure]:', err);
@@ -289,8 +331,8 @@ export async function GET(request: Request) {
       });
     }
 
-    // Phase 3: Hotspot Cache Miss -> Fetch Fresh Photos on Demand with Progressive Radius Widening
-    const radiusTiers = [5, 25, 50];
+    // Phase 3: Hotspot Cache Miss -> Fetch Fresh Photos on Demand with Progressive Radius Widening (1km -> 2km -> 5km -> 15km)
+    const radiusTiers = [1, 2, 5, 15];
     let allPhotos: FetchedPhoto[] = [];
     for (const radius of radiusTiers) {
       
