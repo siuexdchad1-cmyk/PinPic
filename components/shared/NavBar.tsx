@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Camera, BookImage, LayoutDashboard, MapPin, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import SplitText from '@/components/ui/SplitText';
 
 const navLinks = [
   { href: '/dashboard', label: 'Dashboard',   icon: LayoutDashboard },
@@ -20,10 +21,18 @@ export default function NavBar() {
     <header className="sticky top-0 z-40 border-b border-zinc-800 bg-black">
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
         
-        {/* Brand Logo */}
+        {/* Brand Logo with SplitText animation */}
         <Link href="/" className="flex items-center gap-2 font-semibold text-white">
           <MapPin className="h-5 w-5 text-emerald-500" />
-          <span className="text-base tracking-tight font-mono font-bold">PinPic</span>
+          <SplitText
+            text="PinPic"
+            className="text-base tracking-tight font-mono font-bold text-white"
+            delay={60}
+            duration={0.6}
+            splitType="chars"
+            from={{ opacity: 0, y: -12 }}
+            to={{ opacity: 1, y: 0 }}
+          />
         </Link>
 
         {/* Nav Links */}

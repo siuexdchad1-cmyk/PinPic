@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { MapPin } from 'lucide-react';
+import SplitText from '@/components/ui/SplitText';
 
 // ── Minimal Rule-of-Thirds composition canvas ─────────────────────────────
 function CompositionCanvas() {
@@ -136,7 +137,15 @@ export default function LandingPage() {
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
           <Link href="/" className="flex items-center gap-2">
             <MapPin className="h-4 w-4 text-emerald-500" strokeWidth={2.5} />
-            <span className="text-sm font-semibold tracking-tight font-mono">PinPic</span>
+            <SplitText
+              text="PinPic"
+              className="text-sm font-semibold tracking-tight font-mono text-white"
+              delay={70}
+              duration={0.7}
+              splitType="chars"
+              from={{ opacity: 0, y: -10 }}
+              to={{ opacity: 1, y: 0 }}
+            />
           </Link>
 
           <div className="hidden md:flex items-center gap-8 font-mono text-xs uppercase tracking-widest">
