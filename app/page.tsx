@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Camera, Compass, Sparkles, ArrowRight, BookImage } from 'lucide-react';
 import SplitText from '@/components/ui/SplitText';
+import TextPressure from '@/components/ui/TextPressure';
 
 export default function LandingPage() {
   return (
@@ -74,19 +75,29 @@ export default function LandingPage() {
           <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-black/30" />
         </div>
 
-        {/* Hero Central Typography (Vita Travels Style) */}
-        <div className="relative z-10 mx-auto max-w-4xl px-6 pt-36 sm:pt-48 flex flex-col items-center">
+        {/* Hero Central Typography (Vita Travels Style + TextPressure) */}
+        <div className="relative z-10 mx-auto max-w-4xl px-6 pt-32 sm:pt-40 flex flex-col items-center w-full">
           
-          <h1 className="text-7xl sm:text-9xl md:text-[11rem] font-extrabold tracking-tighter text-white uppercase leading-none font-sans drop-shadow-2xl">
-            Travel
-          </h1>
+          <div className="w-full h-36 sm:h-48 md:h-56 relative flex items-center justify-center">
+            <TextPressure
+              text="TRAVEL"
+              flex={true}
+              alpha={false}
+              stroke={false}
+              width={true}
+              weight={true}
+              italic={true}
+              textColor="#ffffff"
+              minFontSize={64}
+            />
+          </div>
 
-          <p className="mt-4 sm:mt-6 text-sm sm:text-xl font-mono text-zinc-200 font-medium max-w-xl leading-relaxed drop-shadow-md">
+          <p className="mt-2 sm:mt-4 text-sm sm:text-xl font-mono text-zinc-200 font-medium max-w-xl leading-relaxed drop-shadow-md">
             With purpose. AI &amp; GPS guided photography. Discover hotspots, align framing, and save memories in one place.
           </p>
 
           {/* Central Pill Action Button */}
-          <div className="mt-8 sm:mt-12">
+          <div className="mt-8 sm:mt-10">
             <Link href="/explore">
               <button className="bg-white text-black font-mono font-bold text-xs uppercase tracking-widest px-8 py-3.5 rounded-full shadow-2xl hover:bg-zinc-200 transition-all duration-200 active:scale-95 flex items-center gap-2.5 border border-white">
                 Explore Hotspots
