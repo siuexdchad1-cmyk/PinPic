@@ -117,10 +117,10 @@ const MUMBAI_HOTSPOTS: HotspotPin[] = [
 
 // ── Photography Categories ─────────────────────────────────────────────────────
 const CATEGORIES = {
-  'golden-hour':  { label: '🌅 Golden Hour', color: '#f59e0b' },
-  'portrait':     { label: '🧍 Portrait Spot', color: '#10b981' },
-  'architecture': { label: '🏛️ Architecture', color: '#6366f1' },
-  'nature':       { label: '🌿 Nature Shot', color: '#22c55e' },
+  'golden-hour':  { label: 'Golden Hour', color: '#f59e0b' },
+  'portrait':     { label: 'Portrait Spot', color: '#10b981' },
+  'architecture': { label: 'Architecture', color: '#6366f1' },
+  'nature':       { label: 'Nature Shot', color: '#22c55e' },
 };
 
 function getCategoryColor(cat: string) {
@@ -312,15 +312,15 @@ export default function ExploreMap() {
               <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
                 <span style="font-size:9px;background:${color}22;color:${color};border:1px solid ${color}55;border-radius:4px;padding:2px 7px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">${catLabel}</span>
               </div>
-              <h4 style="font-size:12px;font-weight:700;margin:0 0 4px;border-bottom:1px solid #e4e4e7;padding-bottom:4px;">📍 ${spot.title}</h4>
+              <h4 style="font-size:12px;font-weight:700;margin:0 0 4px;border-bottom:1px solid #e4e4e7;padding-bottom:4px;">${spot.title}</h4>
               <p style="font-size:10px;color:#71717a;margin:0 0 8px;line-height:1.4;">${spot.description ?? 'Photography composition hotspot.'}</p>
-              ${spot.bestTime ? `<div style="font-size:9px;color:#10b981;font-weight:700;margin-bottom:2px;">⏱ ${spot.bestTime}</div>` : ''}
-              ${spot.bestAngle ? `<div style="font-size:9px;color:#6366f1;margin-bottom:8px;">📐 ${spot.bestAngle}</div>` : ''}
+              ${spot.bestTime ? `<div style="font-size:9px;color:#10b981;font-weight:700;margin-bottom:2px;">TIME: ${spot.bestTime}</div>` : ''}
+              ${spot.bestAngle ? `<div style="font-size:9px;color:#6366f1;margin-bottom:8px;">ANGLE: ${spot.bestAngle}</div>` : ''}
               <div style="width:100%;height:110px;border-radius:6px;overflow:hidden;margin-bottom:8px;">
                 <img src="${spot.inspo_image_url}" style="width:100%;height:100%;object-fit:cover;" loading="lazy" onerror="this.style.display='none'" />
               </div>
               <a href="/camera?ref=${spot.id}" style="display:block;width:100%;text-align:center;background:${color};color:white;text-decoration:none;font-size:10px;font-weight:700;padding:8px 0;border-radius:4px;">
-                📷 SHOOT HERE
+                SHOOT HERE
               </a>
             </div>
           `;
@@ -462,14 +462,14 @@ export default function ExploreMap() {
       {/* Map */}
       <div ref={mapContainerRef} className="w-full h-full z-10" />
 
-      {/* ── Nominatim Search Bar (Liquid Glassmorphism Pill Theme) ─────────── */}
+      {/* ── Nominatim Search Bar (Minimal Dark Pill Theme) ───────────────── */}
       <form
         onSubmit={handleSearch}
         className="absolute top-4 left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-lg pointer-events-auto"
       >
-        <div className="glass-input-pill p-1.5 flex items-center gap-3 shadow-2xl">
+        <div className="bg-zinc-950/90 border border-zinc-800 backdrop-blur-md p-1.5 rounded-full flex items-center gap-3 shadow-2xl">
           {/* Left Plus Icon Pill */}
-          <div className="h-8 w-8 rounded-full bg-white/20 border border-white/40 flex items-center justify-center text-white shrink-0 shadow-inner">
+          <div className="h-8 w-8 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 shrink-0">
             <Plus className="h-4 w-4" />
           </div>
 
@@ -478,16 +478,16 @@ export default function ExploreMap() {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search any city or landmark…"
-            className="flex-1 bg-transparent text-xs font-mono text-white placeholder:text-white/70 outline-none font-medium tracking-wide"
+            className="flex-1 bg-transparent text-xs font-mono text-white placeholder:text-zinc-500 outline-none tracking-wide"
           />
 
           {/* Right Action Button Pill */}
           <button
             type="submit"
             disabled={searching}
-            className="glass-btn-purple h-9 px-5 rounded-full text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 transition-transform active:scale-95 disabled:opacity-60"
+            className="bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-800/80 text-indigo-200 h-9 px-5 rounded-full text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-60"
           >
-            {searching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><span>SEARCH</span><Mic className="h-3.5 w-3.5 opacity-80" /></>}
+            {searching ? <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400" /> : <><span>SEARCH</span><Mic className="h-3.5 w-3.5 text-indigo-400" /></>}
           </button>
         </div>
       </form>
@@ -544,7 +544,7 @@ export default function ExploreMap() {
         <div className="flex items-center gap-1.5 mb-2">
           <Sun className={`h-3.5 w-3.5 ${isGolden ? 'text-amber-400' : 'text-zinc-400'}`} />
           <span className={`text-[9px] font-mono font-bold uppercase tracking-wider ${isGolden ? 'text-amber-300' : 'text-zinc-400'}`}>
-            {isGolden ? '✨ Golden Hour NOW' : 'Light Forecast'}
+            {isGolden ? 'GOLDEN HOUR ACTIVE' : 'Light Forecast'}
           </span>
         </div>
         <div className="flex flex-col gap-1">
@@ -662,7 +662,7 @@ export default function ExploreMap() {
                   {/* Photo Brief / Analysis */}
                   <div className="border border-zinc-800 bg-zinc-900/50 rounded-xl p-4">
                     <span className="text-[9px] font-mono text-emerald-400 font-bold uppercase tracking-wider block mb-1.5">
-                      📊 Groq AI Photo Scan Brief
+                      GROQ AI PHOTO SCAN BRIEF
                     </span>
                     <p className="text-xs font-mono text-zinc-200 leading-relaxed">
                       {aiFeedback.brief}
@@ -672,7 +672,7 @@ export default function ExploreMap() {
                   {/* Actionable Improvement Tip */}
                   <div className="border border-amber-900/50 bg-amber-950/20 rounded-xl p-4">
                     <span className="text-[9px] font-mono text-amber-400 font-bold uppercase tracking-wider block mb-1.5">
-                      💡 Recommended Adjustment
+                      RECOMMENDED ADJUSTMENT
                     </span>
                     <p className="text-xs font-mono text-zinc-200 leading-relaxed">
                       {aiFeedback.actionableTip}
