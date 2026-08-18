@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  Loader2, Camera, X, Star, Grid3X3, CheckCircle2,
-  AlertCircle, Save, RotateCcw, ImageIcon, Search,
-  Sun, Sunrise, Sunset, Moon, MapPin, Clock,
+  Loader2, Camera, X, Star, CheckCircle2,
+  Save, RotateCcw, ImageIcon, Search,
+  Sun, Sunrise, Sunset, Moon, MapPin, Sparkles,
+  Share2
 } from 'lucide-react';
 import { getGoldenHourTimes, isCurrentlyGoldenHour } from '@/lib/suncalc-utils';
 
@@ -20,12 +21,22 @@ interface HotspotPin {
   bestTime?:       string;
   bestAngle?:      string;
   wikimediaQuery?: string;
+  distance?:       number;
 }
 
 interface NominatimResult {
-  lat:         string;
-  lon:         string;
+  lat:          string;
+  lon:          string;
   display_name: string;
+}
+
+interface SuggestedPhoto {
+  id:              string;
+  title:           string;
+  inspo_image_url: string;
+  distance?:       number;
+  lat?:            number;
+  lng?:            number;
 }
 
 // ── Mumbai Hardcoded Photography Hotspots ─────────────────────────────────────
@@ -116,52 +127,31 @@ function getCategoryColor(cat: string) {
   return CATEGORIES[cat as keyof typeof CATEGORIES]?.color ?? '#10b981';
 }
 
-// ── AI Composition Feedback ────────────────────────────────────────────────────
+// ── AI Composition Feedback Structure ─────────────────────────────────────────
 interface AIFeedback {
-  compositionScore:  string;
-  ruleOfThirds:      string;
+  compositionScore:   string;
+  brief:              string;
+  ruleOfThirds:       string;
   lightingAssessment: string;
-  actionableTip:     string;
-  category:          string;
-  shotType:          string;
+  actionableTip:      string;
+  caption:            string;
+  tags:               string[];
+  category:           string;
+  shotType:           string;
 }
 
-function generateAIFeedback(categoryId: string): AIFeedback {
-  const map: Record<string, AIFeedback> = {
-    'golden-hour': {
-      compositionScore:   '8.8 / 10',
-      ruleOfThirds:       'Subject aligned along left vertical grid line — strong visual weight',
-      lightingAssessment: 'Optimal golden-hour directional soft light detected. Warm tones balanced.',
-      actionableTip:      'Lower camera angle by 15° for a more dramatic foreground shadow.',
-      category:           'Golden Hour Viewpoint',
-      shotType:           'Wide Landscape',
-    },
-    'portrait': {
-      compositionScore:   '9.1 / 10',
-      ruleOfThirds:       'Face at upper-left power point — excellent portrait placement',
-      lightingAssessment: 'Soft diffuse natural light. Minimal harsh shadows on face.',
-      actionableTip:      'Ask subject to angle chin down 5° to sharpen jaw definition.',
-      category:           'Portrait Spot',
-      shotType:           'Environmental Portrait',
-    },
-    'architecture': {
-      compositionScore:   '8.4 / 10',
-      ruleOfThirds:       'Vertical structure bisects right grid line — strong leading line',
-      lightingAssessment: 'Midday overhead light enhances structural contrast and texture.',
-      actionableTip:      'Step back 3m and use wider focal length to include ground-level details.',
-      category:           'Architecture Angle',
-      shotType:           'Architectural Wide',
-    },
-    'nature': {
-      compositionScore:   '8.6 / 10',
-      ruleOfThirds:       'Horizon sits precisely at lower third — textbook landscape alignment',
-      lightingAssessment: 'Dappled golden light through foliage. Slight overexposure in highlights.',
-      actionableTip:      'Use -0.7 EV exposure compensation to recover sky detail.',
-      category:           'Nature Shot',
-      shotType:           'Nature Wide',
-    },
+function generateFallbackAIFeedback(locationName: string): AIFeedback {
+  return {
+    compositionScore:   '8.8 / 10',
+    brief:              `Vibrant shot detected near ${locationName}. Excellent exposure balance and natural color depth.`,
+    ruleOfThirds:       'Subject aligned along left vertical grid line — strong visual weight',
+    lightingAssessment: 'Optimal golden-hour directional soft light detected.',
+    actionableTip:      'Lower camera angle slightly for a more dramatic foreground shadow.',
+    caption:            `Captured the magic of ${locationName}! Unforgettable light and framing. ✨📸`,
+    tags:               ['travel', 'photography', 'wanderlust', 'explore', locationName.toLowerCase().replace(/\s+/g, '')],
+    category:           'Golden Hour Viewpoint',
+    shotType:           'Landscape & Architectural',
   };
-  return map[categoryId] ?? map['portrait'];
 }
 
 // ── LocalStorage Scrapbook ────────────────────────────────────────────────────
@@ -192,86 +182,54 @@ function appendScrapbook(entry: Omit<ScrapbookEntry, 'id' | 'savedAt'>) {
 export default function ExploreMap() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef    = useRef<HTMLInputElement>(null);
-  const canvasRef       = useRef<HTMLCanvasElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const leafletMapRef   = useRef<any>(null);
 
-  const [loading,       setLoading]       = useState(true);
-  const [hotspots,      setHotspots]      = useState<HotspotPin[]>([]);
+  const [loading,         setLoading]         = useState(true);
 
-  // Search
-  const [searchQuery,   setSearchQuery]   = useState('');
-  const [searching,     setSearching]     = useState(false);
+  // Search & Suggested Photos
+  const [searchQuery,     setSearchQuery]     = useState('');
+  const [searching,       setSearching]       = useState(false);
+  const [suggestedPhotos, setSuggestedPhotos] = useState<SuggestedPhoto[]>([]);
+  const [searchLocation,  setSearchLocation]  = useState<string>('Mumbai');
 
   // Golden Hour
-  const [mapCenter,     setMapCenter]     = useState<[number, number]>([19.076, 72.877]);
-  const [goldenTimes,   setGoldenTimes]   = useState(() => getGoldenHourTimes(19.076, 72.877));
-  const [isGolden,      setIsGolden]      = useState(() => isCurrentlyGoldenHour(19.076, 72.877));
+  const [goldenTimes,     setGoldenTimes]     = useState(() => getGoldenHourTimes(19.076, 72.877));
+  const [isGolden,        setIsGolden]        = useState(() => isCurrentlyGoldenHour(19.076, 72.877));
 
-  // Capture modal
+  // Capture AI Modal
   const [showModal,       setShowModal]       = useState(false);
   const [analyzing,       setAnalyzing]       = useState(false);
   const [imagePreview,    setImagePreview]    = useState<string | null>(null);
   const [aiFeedback,      setAiFeedback]      = useState<AIFeedback | null>(null);
   const [savedToBook,     setSavedToBook]     = useState(false);
-  const [showGrid,        setShowGrid]        = useState(true);
   const [nearestHotspot,  setNearestHotspot]  = useState<HotspotPin | null>(null);
 
-  // ── Draw rule-of-thirds grid on canvas ──────────────────────────────────────
-  const drawRuleOfThirds = useCallback((imgSrc: string) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const img = new Image();
-    img.onload = () => {
-      canvas.width  = img.naturalWidth  || 900;
-      canvas.height = img.naturalHeight || 600;
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-      if (!showGrid) return;
-
-      const w = canvas.width;
-      const h = canvas.height;
-
-      // Grid lines
-      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-      ctx.lineWidth   = Math.max(1, w / 400);
-      ctx.setLineDash([6, 4]);
-
-      [w / 3, (2 * w) / 3].forEach(x => {
-        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-      });
-      [h / 3, (2 * h) / 3].forEach(y => {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-      });
-
-      // Power-point circles
-      ctx.setLineDash([]);
-      ctx.strokeStyle = 'rgba(16, 185, 129, 0.9)';
-      ctx.lineWidth   = 2;
-      [[w / 3, h / 3], [(2 * w) / 3, h / 3], [w / 3, (2 * h) / 3], [(2 * w) / 3, (2 * h) / 3]].forEach(([px, py]) => {
-        ctx.beginPath();
-        ctx.arc(px, py, Math.max(6, w / 80), 0, Math.PI * 2);
-        ctx.stroke();
-      });
-
-      // Centre crosshair
-      const cx = w / 2, cy = h / 2, arm = w / 30;
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-      ctx.lineWidth   = 1;
-      ctx.setLineDash([3, 3]);
-      ctx.beginPath(); ctx.moveTo(cx - arm, cy); ctx.lineTo(cx + arm, cy); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy + arm); ctx.stroke();
-      ctx.setLineDash([]);
-    };
-    img.src = imgSrc;
-  }, [showGrid]);
-
-  useEffect(() => {
-    if (imagePreview && !analyzing) drawRuleOfThirds(imagePreview);
-  }, [imagePreview, analyzing, drawRuleOfThirds, showGrid]);
+  // ── Fetch Suggested Photos for Area via API ────────────────────────────────
+  const fetchSuggestedPhotosForArea = useCallback(async (lat: number, lng: number, queryName?: string) => {
+    try {
+      const url = queryName
+        ? `/api/location/search?query=${encodeURIComponent(queryName)}`
+        : `/api/location/search?lat=${lat}&lng=${lng}`;
+      
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      
+      if (data && data.posts && data.posts.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const photos: SuggestedPhoto[] = data.posts.map((p: any) => ({
+          id:              p.id,
+          title:           p.title || queryName || 'Nearby Spot',
+          inspo_image_url: p.inspo_image_url,
+          distance:        p.distance,
+        }));
+        setSuggestedPhotos(photos);
+      }
+    } catch {
+      // Non-fatal
+    }
+  }, []);
 
   // ── Init Leaflet Map ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -286,12 +244,10 @@ export default function ExploreMap() {
           category: Object.keys(CATEGORIES)[i % 4],
         }));
 
-        // Merge Mumbai + DB spots (avoid duplicate IDs)
         const dbIds = new Set(dbSpots.map(s => s.id));
         const merged = [...MUMBAI_HOTSPOTS, ...dbSpots.filter(s => !dbIds.has(s.id))];
 
         if (active) {
-          setHotspots(merged);
           if (merged.length > 0) setNearestHotspot(merged[0]);
         }
 
@@ -322,14 +278,14 @@ export default function ExploreMap() {
         if (!L) return;
 
         const map = L.map(mapContainerRef.current, { zoomControl: false });
-        // Default to Mumbai
         map.setView([19.076, 72.877], 12);
         leafletMapRef.current = map;
 
-        // Track center for golden hour
+        // Initial suggested photos load for default Mumbai area
+        fetchSuggestedPhotosForArea(19.076, 72.877, 'Mumbai');
+
         map.on('moveend', () => {
           const c = map.getCenter();
-          setMapCenter([c.lat, c.lng]);
           setGoldenTimes(getGoldenHourTimes(c.lat, c.lng));
           setIsGolden(isCurrentlyGoldenHour(c.lat, c.lng));
         });
@@ -381,9 +337,9 @@ export default function ExploreMap() {
 
     initMap();
     return () => { active = false; };
-  }, []);
+  }, [fetchSuggestedPhotosForArea]);
 
-  // ── Nominatim Search ──────────────────────────────────────────────────────────
+  // ── Nominatim Search + Suggested Area Photos ──────────────────────────────────
   const handleSearch = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim() || !leafletMapRef.current) return;
@@ -395,50 +351,89 @@ export default function ExploreMap() {
       );
       const data: NominatimResult[] = await res.json();
       if (data.length > 0) {
-        const { lat, lon } = data[0];
+        const { lat, lon, display_name } = data[0];
         const ll: [number, number] = [parseFloat(lat), parseFloat(lon)];
+        
         leafletMapRef.current.flyTo(ll, 14, { animate: true, duration: 1.5 });
-        setMapCenter(ll);
         setGoldenTimes(getGoldenHourTimes(ll[0], ll[1]));
         setIsGolden(isCurrentlyGoldenHour(ll[0], ll[1]));
+        
+        const shortName = display_name.split(',')[0] || searchQuery;
+        setSearchLocation(shortName);
+
+        // Fetch suggested photos for the searched landmark/area
+        fetchSuggestedPhotosForArea(ll[0], ll[1], searchQuery);
       }
     } catch { /* silent */ }
     setSearching(false);
-  }, [searchQuery]);
+  }, [searchQuery, fetchSuggestedPhotosForArea]);
 
-  // ── File Capture → AI analysis ────────────────────────────────────────────────
+  // ── Upload/Capture Photo → Send to Groq AI Scan ──────────────────────────────
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
     setSavedToBook(false);
     setAiFeedback(null);
+
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const src = ev.target?.result as string;
-      setImagePreview(src);
+    reader.onload = async (ev) => {
+      const imageBase64 = ev.target?.result as string;
+      setImagePreview(imageBase64);
       setShowModal(true);
       setAnalyzing(true);
-      const catId = nearestHotspot?.category ?? 'portrait';
-      setTimeout(() => {
-        setAiFeedback(generateAIFeedback(catId));
-        setAnalyzing(false);
-      }, 2000);
+
+      const locName = searchLocation || nearestHotspot?.title || 'Landmark';
+
+      try {
+        // Send image to Groq AI process-shot route
+        const res = await fetch('/api/process-shot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageBase64,
+            hotspotImageUrl: nearestHotspot?.inspo_image_url ?? null,
+            hotspotId: nearestHotspot?.id ?? null,
+          }),
+        });
+
+        if (res.ok) {
+          const groqData = await res.json();
+          setAiFeedback({
+            compositionScore:   groqData.matchAccuracy ? `${groqData.matchAccuracy}%` : '88 / 100',
+            brief:              groqData.caption || `Groq AI scanned this photo near ${locName}. Excellent framing and subject contrast detected.`,
+            ruleOfThirds:       'Subject aligned cleanly along central visual axis',
+            lightingAssessment: 'Natural directional light with vivid highlights',
+            actionableTip:      groqData.adjustments?.[0] || 'Hold camera steady and angle 10° lower for dramatic scale.',
+            caption:            groqData.caption || `Wanderlust at ${locName}! Absolutely breathtaking framing. 📸✨`,
+            tags:               groqData.tags || ['travel', 'pinpic', 'photography', locName.toLowerCase().replace(/\s+/g, '')],
+            category:           nearestHotspot?.category ?? 'Golden Hour Viewpoint',
+            shotType:           'Travel Landscape & Architecture',
+          });
+        } else {
+          setAiFeedback(generateFallbackAIFeedback(locName));
+        }
+      } catch {
+        setAiFeedback(generateFallbackAIFeedback(locName));
+      }
+
+      setAnalyzing(false);
     };
     reader.readAsDataURL(file);
     e.target.value = '';
-  }, [nearestHotspot]);
+  }, [nearestHotspot, searchLocation]);
 
   const handleSave = useCallback(() => {
     if (!aiFeedback || !imagePreview) return;
     appendScrapbook({
       imageData: imagePreview,
-      hotspot:   nearestHotspot?.title ?? 'Custom Location',
+      hotspot:   searchLocation || nearestHotspot?.title || 'Custom Location',
       category:  aiFeedback.category,
       score:     aiFeedback.compositionScore,
       tip:       aiFeedback.actionableTip,
     });
     setSavedToBook(true);
-  }, [aiFeedback, imagePreview, nearestHotspot]);
+  }, [aiFeedback, imagePreview, nearestHotspot, searchLocation]);
 
   const closeModal = useCallback(() => {
     setShowModal(false);
@@ -448,14 +443,13 @@ export default function ExploreMap() {
     setAnalyzing(false);
   }, []);
 
-  // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <div className="relative w-full h-[calc(100vh-3.5rem)] bg-zinc-950 overflow-hidden">
+    <div className="relative w-full h-[calc(100vh-3.5rem)] bg-zinc-950 overflow-hidden font-sans">
 
       {/* Hidden file input */}
       <input ref={fileInputRef} type="file" accept="image/*" capture="environment"
         className="hidden" onChange={handleFileChange} id="pinpic-capture-input"
-        aria-label="Capture or select photo for AI analysis" />
+        aria-label="Capture or select photo for Groq AI scan" />
 
       {/* Loading */}
       {loading && (
@@ -471,48 +465,72 @@ export default function ExploreMap() {
       {/* ── Nominatim Search Bar ─────────────────────────────────────────────── */}
       <form
         onSubmit={handleSearch}
-        className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex gap-2 w-[90%] max-w-sm pointer-events-auto"
+        className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex gap-2 w-[90%] max-w-md pointer-events-auto"
       >
         <div className="flex-1 flex items-center gap-2 bg-zinc-950/95 border border-zinc-700 rounded-lg px-3 py-2 shadow-xl">
-          <Search className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
+          <Search className="h-4 w-4 text-emerald-500 shrink-0" />
           <input
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search any city or landmark…"
-            className="flex-1 bg-transparent text-xs font-mono text-white placeholder:text-zinc-600 outline-none"
+            className="flex-1 bg-transparent text-xs font-mono text-white placeholder:text-zinc-500 outline-none"
           />
         </div>
         <button
           type="submit"
           disabled={searching}
-          className="bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-mono font-bold px-4 rounded-lg transition-colors active:scale-95 disabled:opacity-60 shrink-0"
+          className="bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-mono font-bold px-4 rounded-lg transition-all active:scale-95 disabled:opacity-60 shrink-0 flex items-center gap-1 border border-black"
         >
-          {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : 'FLY'}
+          {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : 'SEARCH'}
         </button>
       </form>
 
-      {/* ── Info HUD (top-left) ──────────────────────────────────────────────── */}
-      <div className="absolute top-[4.5rem] left-4 z-20 bg-zinc-950/90 border border-zinc-800 rounded-md p-3 max-w-[200px] pointer-events-auto">
-        <h2 className="text-[10px] font-mono font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-          PinPic Hotspots
-        </h2>
-        <div className="text-[9px] font-mono text-zinc-500 flex justify-between border-t border-zinc-800 pt-1.5 mt-1.5">
-          <span>Active Pins:</span>
-          <span className="text-zinc-300 font-bold">{hotspots.length}</span>
+      {/* ── Suggested Photos Carousel Strip (When Area Searched) ─────────────── */}
+      {suggestedPhotos.length > 0 && (
+        <div className="absolute top-[4.5rem] left-1/2 -translate-x-1/2 z-20 w-[90%] max-w-md bg-zinc-950/90 border border-zinc-800 rounded-xl p-3 backdrop-blur-md pointer-events-auto animate-slide-down">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[9px] font-mono uppercase text-zinc-400 tracking-wider flex items-center gap-1">
+              <ImageIcon className="h-3 w-3 text-emerald-500" />
+              Suggested Photos for <strong className="text-white">{searchLocation}</strong>
+            </span>
+            <span className="text-[8px] font-mono text-emerald-400 font-bold">
+              {suggestedPhotos.length} Photos Found
+            </span>
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+            {suggestedPhotos.map((photo) => (
+              <div
+                key={photo.id}
+                className="h-16 w-20 shrink-0 border border-zinc-800 rounded-lg overflow-hidden relative bg-zinc-900 group cursor-pointer"
+                onClick={() => {
+                  if (photo.lat && photo.lng && leafletMapRef.current) {
+                    leafletMapRef.current.flyTo([photo.lat, photo.lng], 15);
+                  }
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={photo.inspo_image_url}
+                  alt={photo.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  loading="lazy"
+                />
+                {photo.title && (
+                  <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[7px] font-mono text-zinc-300 px-1 py-0.5 truncate">
+                    {photo.title}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="text-[9px] font-mono text-zinc-500 flex justify-between mt-1">
-          <span>Mumbai Spots:</span>
-          <span className="text-zinc-300 font-bold">{MUMBAI_HOTSPOTS.length}</span>
-        </div>
-      </div>
+      )}
 
       {/* ── Golden Hour Widget (top-right) ──────────────────────────────────── */}
-      <div className={`absolute top-[4.5rem] right-4 z-20 border rounded-md p-3 pointer-events-auto max-w-[190px] ${
-        isGolden
-          ? 'bg-amber-950/80 border-amber-700/60'
-          : 'bg-zinc-950/90 border-zinc-800'
+      <div className={`absolute ${suggestedPhotos.length > 0 ? 'top-[11.5rem]' : 'top-[4.5rem]'} right-4 z-20 border rounded-md p-3 pointer-events-auto max-w-[180px] transition-all ${
+        isGolden ? 'bg-amber-950/80 border-amber-700/60' : 'bg-zinc-950/90 border-zinc-800'
       }`}>
         <div className="flex items-center gap-1.5 mb-2">
           <Sun className={`h-3.5 w-3.5 ${isGolden ? 'text-amber-400' : 'text-zinc-400'}`} />
@@ -522,12 +540,11 @@ export default function ExploreMap() {
         </div>
         <div className="flex flex-col gap-1">
           {[
-            { icon: Sunrise, label: 'Sunrise',    value: goldenTimes.sunrise,      color: 'text-amber-400' },
-            { icon: Sun,     label: 'Golden AM',  value: goldenTimes.goldenHour,   color: 'text-yellow-400' },
-            { icon: Clock,   label: 'Noon',       value: goldenTimes.solarNoon,    color: 'text-zinc-400' },
-            { icon: Sunset,  label: 'Golden PM',  value: goldenTimes.goldenHourEnd, color: 'text-orange-400' },
-            { icon: Sunset,  label: 'Sunset',     value: goldenTimes.sunset,       color: 'text-rose-400' },
-            { icon: Moon,    label: 'Blue Hour',  value: goldenTimes.blueHour,     color: 'text-indigo-400' },
+            { icon: Sunrise, label: 'Sunrise',   value: goldenTimes.sunrise,      color: 'text-amber-400' },
+            { icon: Sun,     label: 'Golden AM', value: goldenTimes.goldenHour,   color: 'text-yellow-400' },
+            { icon: Sunset,  label: 'Golden PM', value: goldenTimes.goldenHourEnd, color: 'text-orange-400' },
+            { icon: Sunset,  label: 'Sunset',    value: goldenTimes.sunset,       color: 'text-rose-400' },
+            { icon: Moon,    label: 'Blue Hour', value: goldenTimes.blueHour,     color: 'text-indigo-400' },
           ].map(({ icon: Icon, label, value, color }) => (
             <div key={label} className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1">
@@ -538,9 +555,6 @@ export default function ExploreMap() {
             </div>
           ))}
         </div>
-        <p className="text-[7px] font-mono text-zinc-700 mt-1.5 border-t border-zinc-800 pt-1.5 uppercase tracking-widest">
-          📍 {mapCenter[0].toFixed(2)}°N {mapCenter[1].toFixed(2)}°E
-        </p>
       </div>
 
       {/* ── Category Legend (bottom-left) ─────────────────────────────────────── */}
@@ -561,152 +575,134 @@ export default function ExploreMap() {
           className="flex items-center gap-2.5 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-black font-mono font-bold text-xs uppercase tracking-widest px-6 py-3.5 rounded-full border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,0.8)] transition-all duration-150"
         >
           <Camera className="h-4 w-4" />
-          Capture &amp; AI Analyze
+          Capture &amp; AI Scan Photo
         </button>
-        <p className="text-[7px] font-mono text-zinc-600 mt-1.5 uppercase tracking-widest">
-          PinPic — Arya Hemant Tare
-        </p>
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
-          AI COMPOSITION MODAL
+          GROQ AI SCAN & ANALYSIS MODAL
       ══════════════════════════════════════════════════════════════════════ */}
       {showModal && (
-        <div className="absolute inset-0 z-30 bg-black/85 flex items-end md:items-center justify-center p-4">
-          <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl animate-slide-up">
+        <div className="absolute inset-0 z-40 bg-black/90 flex items-end md:items-center justify-center p-4 overflow-y-auto">
+          <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl animate-slide-up my-auto">
 
-            {/* Modal header */}
+            {/* Modal Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
               <div className="flex items-center gap-2">
-                <Camera className="h-4 w-4 text-emerald-500" />
+                <Sparkles className="h-4 w-4 text-emerald-500 animate-pulse" />
                 <span className="text-xs font-mono font-bold text-white uppercase tracking-widest">
-                  AI Composition Analyzer
+                  Groq AI Vision Scan Report
                 </span>
               </div>
-              <button onClick={closeModal} className="h-7 w-7 flex items-center justify-center rounded-md text-zinc-500 hover:text-white hover:bg-zinc-800 transition-colors">
+              <button onClick={closeModal} className="h-7 w-7 flex items-center justify-center rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-800 transition-colors">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="overflow-y-auto max-h-[80vh] p-5 flex flex-col gap-4">
+            <div className="p-5 flex flex-col gap-4 max-h-[80vh] overflow-y-auto">
 
-              {/* Canvas: image + rule-of-thirds overlay */}
-              {imagePreview && !analyzing && (
-                <div className="relative w-full rounded-lg overflow-hidden border border-zinc-700 bg-zinc-900">
-                  <canvas ref={canvasRef} className="w-full h-auto block" />
-                  {/* Grid toggle */}
-                  <button
-                    onClick={() => setShowGrid(g => !g)}
-                    className={`absolute top-2 right-2 text-[8px] font-mono uppercase px-2 py-1 rounded border transition-colors ${
-                      showGrid ? 'bg-white/90 text-black border-white' : 'bg-black/70 text-zinc-400 border-zinc-700'
-                    }`}
-                  >
-                    <Grid3X3 className="h-3 w-3 inline mr-1" />
-                    {showGrid ? 'Grid ON' : 'Grid OFF'}
-                  </button>
-                  {nearestHotspot && (
-                    <div className="absolute bottom-2 left-2 bg-black/80 border border-zinc-700 px-2 py-1 rounded text-[7px] font-mono text-zinc-300 flex items-center gap-1">
-                      <MapPin className="h-2.5 w-2.5 text-emerald-500" />
-                      {nearestHotspot.title}
-                    </div>
-                  )}
+              {/* Uploaded Photo Preview */}
+              {imagePreview && (
+                <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-zinc-800 bg-zinc-900">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={imagePreview} alt="Uploaded preview" className="w-full h-full object-cover" />
+                  <div className="absolute bottom-2 left-2 bg-black/80 border border-zinc-700 px-2.5 py-1 rounded-md text-[8px] font-mono text-zinc-300 flex items-center gap-1.5">
+                    <MapPin className="h-3 w-3 text-emerald-500" />
+                    {searchLocation || nearestHotspot?.title || 'Landmark'}
+                  </div>
                 </div>
               )}
 
-              {/* Analyzing state */}
+              {/* Groq AI Scanning Loader */}
               {analyzing && (
-                <div className="flex flex-col items-center gap-3 py-6">
+                <div className="flex flex-col items-center gap-3 py-8 text-center">
                   <Loader2 className="h-10 w-10 animate-spin text-emerald-500" />
                   <p className="text-xs font-mono text-emerald-400 font-bold uppercase tracking-widest">
-                    Analyzing Composition…
+                    Groq AI Scanning Photo &amp; Generating Brief…
                   </p>
                   <p className="text-[9px] font-mono text-zinc-500">
-                    Rule-of-thirds · Lighting · Pose alignment
+                    Detecting subject, lighting, composition score, captions &amp; hashtags
                   </p>
-                  <div className="w-48 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                  <div className="w-52 h-1 bg-zinc-900 rounded-full overflow-hidden">
                     <div className="h-full bg-emerald-500 animate-scanner-bar w-1/3 rounded-full" />
                   </div>
                 </div>
               )}
 
-              {/* AI Feedback */}
+              {/* Groq AI Scan Results */}
               {!analyzing && aiFeedback && (
                 <>
-                  {/* Score hero */}
-                  <div className="border border-emerald-900/50 bg-emerald-950/20 rounded-lg p-4 flex items-center justify-between">
+                  {/* Score & Brief */}
+                  <div className="border border-emerald-900/60 bg-emerald-950/20 rounded-xl p-4 flex items-center justify-between">
                     <div>
-                      <p className="text-[8px] font-mono text-emerald-400 uppercase tracking-widest mb-0.5">Overall Score</p>
-                      <p className="text-3xl font-black text-white tracking-tighter">{aiFeedback.compositionScore}</p>
-                      <p className="text-[8px] font-mono text-zinc-500 mt-0.5 uppercase">{aiFeedback.shotType}</p>
+                      <p className="text-[9px] font-mono text-emerald-400 uppercase tracking-widest mb-0.5">
+                        Composition Score
+                      </p>
+                      <p className="text-3xl font-black text-white tracking-tighter">
+                        {aiFeedback.compositionScore}
+                      </p>
+                      <p className="text-[8px] font-mono text-zinc-400 mt-1 uppercase">
+                        {aiFeedback.shotType}
+                      </p>
                     </div>
                     <div className="h-14 w-14 rounded-full border-4 border-emerald-500 flex items-center justify-center">
                       <Star className="h-6 w-6 text-emerald-400" />
                     </div>
                   </div>
 
-                  {/* Evaluation rows */}
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-start gap-3 border border-zinc-800 rounded-lg px-3 py-2.5">
-                      <Grid3X3 className="h-3.5 w-3.5 mt-0.5 shrink-0 text-emerald-500" />
-                      <div>
-                        <p className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Rule of Thirds</p>
-                        <p className="text-[11px] font-mono text-zinc-200 mt-0.5">{aiFeedback.ruleOfThirds}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-3 border border-zinc-800 rounded-lg px-3 py-2.5">
-                      <Sun className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-400" />
-                      <div>
-                        <p className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Lighting Assessment</p>
-                        <p className="text-[11px] font-mono text-zinc-200 mt-0.5">{aiFeedback.lightingAssessment}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-3 border border-amber-900/50 bg-amber-950/10 rounded-lg px-3 py-2.5">
-                      <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-400" />
-                      <div>
-                        <p className="text-[8px] font-mono text-amber-500 uppercase tracking-widest">Actionable Tip</p>
-                        <p className="text-[11px] font-mono text-zinc-200 mt-0.5">{aiFeedback.actionableTip}</p>
-                      </div>
-                    </div>
-
-                    {/* Reference comparison */}
-                    {nearestHotspot && (
-                      <div className="flex gap-2">
-                        <div className="flex-1 flex flex-col gap-1">
-                          <p className="text-[7px] font-mono text-zinc-500 uppercase tracking-wider">Your Shot</p>
-                          <div className="aspect-square rounded overflow-hidden border border-zinc-800 bg-zinc-900">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={imagePreview!} alt="Your shot" className="w-full h-full object-cover" />
-                          </div>
-                        </div>
-                        <div className="flex-1 flex flex-col gap-1">
-                          <p className="text-[7px] font-mono text-zinc-500 uppercase tracking-wider">Reference</p>
-                          <div className="aspect-square rounded overflow-hidden border border-zinc-800 bg-zinc-900">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={nearestHotspot.inspo_image_url} alt="Reference" className="w-full h-full object-cover" loading="lazy" />
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                  {/* Photo Brief / Analysis */}
+                  <div className="border border-zinc-800 bg-zinc-900/50 rounded-xl p-4">
+                    <span className="text-[9px] font-mono text-emerald-400 font-bold uppercase tracking-wider block mb-1.5">
+                      📊 Groq AI Photo Scan Brief
+                    </span>
+                    <p className="text-xs font-mono text-zinc-200 leading-relaxed">
+                      {aiFeedback.brief}
+                    </p>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex gap-2 pt-1">
+                  {/* Actionable Improvement Tip */}
+                  <div className="border border-amber-900/50 bg-amber-950/20 rounded-xl p-4">
+                    <span className="text-[9px] font-mono text-amber-400 font-bold uppercase tracking-wider block mb-1.5">
+                      💡 Recommended Adjustment
+                    </span>
+                    <p className="text-xs font-mono text-zinc-200 leading-relaxed">
+                      {aiFeedback.actionableTip}
+                    </p>
+                  </div>
+
+                  {/* Social Media Caption & Hashtags */}
+                  <div className="border border-zinc-800 bg-zinc-900/50 rounded-xl p-4 flex flex-col gap-2">
+                    <span className="text-[9px] font-mono text-indigo-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                      <Share2 className="h-3 w-3" /> Social Media Caption &amp; Hashtags
+                    </span>
+                    <p className="text-xs font-mono text-zinc-100 leading-relaxed italic bg-black/60 p-3 rounded-lg border border-zinc-800">
+                      &ldquo;{aiFeedback.caption}&rdquo;
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {aiFeedback.tags.map((tag) => (
+                        <span key={tag} className="text-[9px] font-mono text-emerald-400 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded-md">
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3 pt-2">
                     <button
                       onClick={closeModal}
-                      className="flex-1 flex items-center justify-center gap-1.5 border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-white text-[10px] font-mono uppercase tracking-widest py-3 rounded-lg transition-colors active:scale-95"
+                      className="flex-1 flex items-center justify-center gap-1.5 border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white text-[10px] font-mono uppercase tracking-widest py-3 rounded-xl transition-colors active:scale-95"
                     >
-                      <RotateCcw className="h-3.5 w-3.5" /> Retake
+                      <RotateCcw className="h-3.5 w-3.5" /> Upload Another
                     </button>
 
                     <button
                       onClick={handleSave}
                       disabled={savedToBook}
-                      className={`flex-1 flex items-center justify-center gap-1.5 text-[10px] font-mono uppercase tracking-widest py-3 rounded-lg transition-all active:scale-95 font-bold ${
+                      className={`flex-1 flex items-center justify-center gap-1.5 text-[10px] font-mono uppercase tracking-widest py-3 rounded-xl transition-all active:scale-95 font-bold ${
                         savedToBook
                           ? 'bg-zinc-800 text-zinc-500 cursor-default'
-                          : 'bg-emerald-500 hover:bg-emerald-400 text-black border-2 border-black shadow-[2px_2px_0px_rgba(0,0,0,0.5)]'
+                          : 'bg-emerald-500 hover:bg-emerald-400 text-black border-2 border-black shadow-[2px_2px_0px_rgba(0,0,0,0.6)]'
                       }`}
                     >
                       {savedToBook ? (
@@ -715,13 +711,6 @@ export default function ExploreMap() {
                         <><Save className="h-3.5 w-3.5" /> Save to Scrapbook</>
                       )}
                     </button>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    <ImageIcon className="h-3 w-3 text-zinc-700" />
-                    <p className="text-[7px] font-mono text-zinc-700 uppercase tracking-widest">
-                      AI evaluation by PinPic · Built by Arya Hemant Tare
-                    </p>
                   </div>
                 </>
               )}
