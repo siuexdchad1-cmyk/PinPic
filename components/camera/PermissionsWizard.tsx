@@ -56,125 +56,124 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
       const coords = cachedCoords || DEFAULT_COORDS;
       onComplete(coords);
     } catch {
-      setError('Camera access was denied. PinPic needs the camera to overlay composition guides.');
+      setError('Camera access denied.');
       setLoading(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black z-50 flex flex-col justify-between p-6 md:p-12 select-none animate-fade-in">
-      {/* Top Header */}
-      <div className="flex justify-between items-center w-full border-b border-zinc-900 pb-4">
-        <span className="text-[10px] font-mono tracking-widest text-emerald-400 font-bold uppercase">
-          ● PINPIC SETUP WIZARD
-        </span>
-        <span className="text-[10px] font-mono text-zinc-500">
-          STEP {step} OF 2
-        </span>
-      </div>
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 select-none animate-fade-in">
+      
+      {/* Compact Wizard Card */}
+      <div className="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-2xl p-6 shadow-2xl flex flex-col justify-between animate-slide-up">
+        
+        {/* Top Header */}
+        <div className="flex justify-between items-center w-full border-b border-zinc-850 pb-3 mb-4">
+          <span className="text-[9px] font-mono tracking-widest text-emerald-400 font-bold uppercase flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            PINPIC SETUP
+          </span>
+          <span className="text-[9px] font-mono text-zinc-500">
+            STEP {step} OF 2
+          </span>
+        </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col justify-center max-w-md mx-auto w-full py-8">
-        {step === 1 ? (
-          <div className="flex flex-col animate-slide-up">
-            <div className="h-12 w-12 border border-zinc-800 flex items-center justify-center bg-zinc-950 mb-8">
-              <MapPin className="h-5 w-5 text-white" />
-            </div>
+        {/* Step Content */}
+        <div className="py-2">
+          {step === 1 ? (
+            <div className="flex flex-col">
+              <div className="h-9 w-9 border border-zinc-800 rounded-lg flex items-center justify-center bg-zinc-900 mb-4 text-emerald-400">
+                <MapPin className="h-4 w-4" />
+              </div>
 
-            <h1 className="text-3xl font-bold tracking-tight text-white mb-4 uppercase font-mono">
-              LOCATION FIX
-            </h1>
-            <p className="text-sm text-zinc-400 leading-relaxed mb-8">
-              PinPic scans local geography to search for nearby photographic hotspots. We use GPS or IP location to pull live 1–2 km reference stencils.
-            </p>
+              <h2 className="text-base font-bold tracking-tight text-white mb-1.5 uppercase font-mono">
+                LOCATION FIX
+              </h2>
+              <p className="text-xs text-zinc-400 font-mono leading-relaxed mb-5">
+                PinPic maps your location (GPS or IP) to load nearby 1–2 km photo inspiration.
+              </p>
 
-            {error && (
-              <div className="flex flex-col gap-3 border border-red-950/60 bg-red-950/20 p-4 mb-6 text-xs font-mono">
-                <div className="flex items-start gap-2.5 text-red-400">
-                  <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-                  <span>{error}</span>
+              {error && (
+                <div className="flex flex-col gap-2 border border-red-950/60 bg-red-950/20 p-3 mb-4 rounded-lg text-xs font-mono">
+                  <div className="flex items-start gap-2 text-red-400 text-[11px]">
+                    <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
+                    <span>{error}</span>
+                  </div>
                 </div>
+              )}
+
+              <div className="flex flex-col gap-2.5">
+                <Button
+                  onClick={requestGeolocation}
+                  disabled={loading}
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-mono font-bold h-11 text-xs rounded-xl transition-all flex items-center justify-center gap-2 tracking-wider"
+                >
+                  {loading ? 'RESOLVING…' : 'DETECT LOCATION'}
+                  {!loading && <ArrowRight className="h-3.5 w-3.5" />}
+                </Button>
+
                 <button
                   type="button"
                   onClick={applyDefaultLocation}
-                  className="self-start text-[10px] font-bold uppercase tracking-widest bg-emerald-500 hover:bg-emerald-400 text-black px-3 py-2 rounded-none transition-colors flex items-center gap-1.5 mt-1"
+                  className="w-full border border-zinc-800 hover:border-zinc-700 bg-zinc-900 hover:bg-zinc-850 text-zinc-300 font-mono text-[10px] py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 uppercase tracking-wider"
                 >
-                  <Compass className="h-3.5 w-3.5" />
-                  Use Default Location (Mumbai) &rarr;
+                  <Compass className="h-3 w-3 text-emerald-500" />
+                  Use Default Location (Mumbai)
                 </button>
               </div>
-            )}
+            </div>
+          ) : (
+            <div className="flex flex-col">
+              <div className="h-9 w-9 border border-zinc-800 rounded-lg flex items-center justify-center bg-zinc-900 mb-4 text-emerald-400">
+                <Camera className="h-4 w-4" />
+              </div>
 
-            <div className="flex flex-col gap-3">
+              <h2 className="text-base font-bold tracking-tight text-white mb-1.5 uppercase font-mono">
+                CAMERA ACCESS
+              </h2>
+              <p className="text-xs text-zinc-400 font-mono leading-relaxed mb-4">
+                Allow camera access to take photos and analyze composition with Groq AI.
+              </p>
+
+              {locationSource && (
+                <div className="mb-4 px-2.5 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-[9px] font-mono text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  Location: <span className="text-emerald-400 font-bold">{locationSource.toUpperCase()}</span> ({cachedCoords?.latitude.toFixed(2)}°, {cachedCoords?.longitude.toFixed(2)}°)
+                </div>
+              )}
+
+              {error && (
+                <div className="flex items-start gap-2 border border-red-950/40 bg-red-950/10 p-3 mb-4 rounded-lg text-[11px] text-red-400 font-mono">
+                  <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
+                  <span>{error}</span>
+                </div>
+              )}
+
               <Button
-                onClick={requestGeolocation}
+                onClick={requestCamera}
                 disabled={loading}
-                className="w-full bg-emerald-500 hover:bg-emerald-600 text-black font-mono font-bold h-14 rounded-none transition-all duration-150 flex items-center justify-center gap-2 tracking-wider"
+                className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-mono font-bold h-11 text-xs rounded-xl transition-all flex items-center justify-center gap-2 tracking-wider"
               >
-                {loading ? 'RESOLVING LOCATION…' : 'DETECT LOCATION (GPS / IP)'}
-                {!loading && <ArrowRight className="h-4 w-4" />}
+                {loading ? 'STARTING…' : 'ALLOW CAMERA ACCESS'}
+                {!loading && <ArrowRight className="h-3.5 w-3.5" />}
               </Button>
-
-              <button
-                type="button"
-                onClick={applyDefaultLocation}
-                className="w-full border border-zinc-800 hover:border-zinc-700 bg-zinc-950 hover:bg-zinc-900 text-zinc-400 hover:text-white font-mono text-xs py-3.5 transition-all flex items-center justify-center gap-2 uppercase tracking-wider"
-              >
-                <Compass className="h-3.5 w-3.5 text-emerald-500" />
-                Use Default Location (Mumbai)
-              </button>
             </div>
-          </div>
-        ) : (
-          <div className="flex flex-col animate-slide-up">
-            <div className="h-12 w-12 border border-zinc-800 flex items-center justify-center bg-zinc-950 mb-8">
-              <Camera className="h-5 w-5 text-white" />
-            </div>
+          )}
+        </div>
 
-            <h1 className="text-3xl font-bold tracking-tight text-white mb-4 uppercase font-mono">
-              CAMERA VIEWPORT
-            </h1>
-            <p className="text-sm text-zinc-400 leading-relaxed mb-4">
-              Overlay stencils directly onto your camera stream to align framing, angles, and horizon lines with reference images.
-            </p>
+        {/* Bottom Footer Actions */}
+        <div className="flex justify-between items-center w-full border-t border-zinc-850 pt-3 mt-4">
+          <button
+            onClick={onClose}
+            className="text-[9px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors uppercase tracking-wider"
+          >
+            Skip &rarr;
+          </button>
+          <span className="text-[8px] font-mono text-zinc-600 uppercase">
+            PINPIC CORE v1.2
+          </span>
+        </div>
 
-            {locationSource && (
-              <div className="mb-6 px-3 py-2 bg-zinc-900/80 border border-zinc-800 rounded text-[9px] font-mono text-zinc-400 uppercase tracking-widest flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                Location Fix: <span className="text-emerald-400 font-bold">{locationSource.toUpperCase()}</span> ({cachedCoords?.latitude.toFixed(3)}°, {cachedCoords?.longitude.toFixed(3)}°)
-              </div>
-            )}
-
-            {error && (
-              <div className="flex items-start gap-3 border border-red-950/40 bg-red-950/10 p-4 mb-6 text-xs text-red-400 font-mono">
-                <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-                <span>{error}</span>
-              </div>
-            )}
-
-            <Button
-              onClick={requestCamera}
-              disabled={loading}
-              className="w-full bg-emerald-500 hover:bg-emerald-600 text-black font-mono font-bold h-14 rounded-none transition-all duration-150 flex items-center justify-center gap-2 tracking-wider"
-            >
-              {loading ? 'INITIALIZING VIEWPORT…' : 'ALLOW CAMERA ACCESS'}
-              {!loading && <ArrowRight className="h-4 w-4" />}
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {/* Bottom Footer Actions */}
-      <div className="flex justify-between items-center w-full border-t border-zinc-900 pt-4">
-        <button
-          onClick={onClose}
-          className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors uppercase tracking-wider"
-        >
-          Skip onboarding &rarr;
-        </button>
-        <span className="text-[9px] font-mono text-zinc-700">
-          PINPIC PWA CORE v1.2
-        </span>
       </div>
     </div>
   );
