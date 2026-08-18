@@ -3,13 +3,13 @@
 import { useState, useCallback } from 'react';
 import { MapPin, Camera, AlertCircle, ArrowRight, Compass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { getSmartLocation } from '@/lib/geo-fallback';
 
 interface PermissionsWizardProps {
   onComplete: (coords: { latitude: number; longitude: number }) => void;
   onClose: () => void;
 }
 
-// Default fallback coordinates (Mumbai)
 const DEFAULT_COORDS = { latitude: 19.076, longitude: 72.877 };
 
 export default function PermissionsWizard({ onComplete, onClose }: PermissionsWizardProps) {
@@ -17,68 +17,31 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cachedCoords, setCachedCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locationSource, setLocationSource] = useState<string | null>(null);
 
-  // ── Step 1: Geolocation with Fallback ────────────────────────────────────
   const applyDefaultLocation = useCallback(() => {
     setCachedCoords(DEFAULT_COORDS);
+    setLocationSource('default');
     setError(null);
     setLoading(false);
     setStep(2);
   }, []);
 
-  function requestGeolocation() {
+  async function requestGeolocation() {
     setLoading(true);
     setError(null);
 
-    if (!('geolocation' in navigator)) {
-      setError('GPS Location is not supported by this browser. Using default location.');
+    try {
+      const loc = await getSmartLocation();
+      setCachedCoords({ latitude: loc.latitude, longitude: loc.longitude });
+      setLocationSource(loc.source);
+      setLoading(false);
+      setStep(2);
+    } catch {
       applyDefaultLocation();
-      return;
     }
-
-    // Try high accuracy first (8s timeout)
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setCachedCoords({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
-        setLoading(false);
-        setStep(2);
-      },
-      (firstErr) => {
-        console.warn('[GPS High Accuracy Failed, trying low accuracy]', firstErr.message);
-
-        // Fallback retry with low accuracy (fast IP/cell triangulation)
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            setCachedCoords({
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-            });
-            setLoading(false);
-            setStep(2);
-          },
-          (secondErr) => {
-            let msg = 'Location access error. You can continue using the default location below.';
-            if (secondErr.code === secondErr.PERMISSION_DENIED) {
-              msg = 'Permission Denied: Location access blocked in browser. Use default location to proceed.';
-            } else if (secondErr.code === secondErr.POSITION_UNAVAILABLE) {
-              msg = 'Position Unavailable: Unable to detect GPS location. Use default location to proceed.';
-            } else if (secondErr.code === secondErr.TIMEOUT) {
-              msg = 'Location Timeout: Took too long to acquire GPS signal indoors/desktop. Use default location to proceed.';
-            }
-            setError(msg);
-            setLoading(false);
-          },
-          { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
-        );
-      },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-    );
   }
 
-  // ── Step 2: Camera ───────────────────────────────────────────────────────
   async function requestCamera() {
     setLoading(true);
     setError(null);
@@ -119,10 +82,10 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
             </div>
 
             <h1 className="text-3xl font-bold tracking-tight text-white mb-4 uppercase font-mono">
-              GPS LOCATION
+              LOCATION FIX
             </h1>
             <p className="text-sm text-zinc-400 leading-relaxed mb-8">
-              PinPic scans local geography to search for nearby photographic hotspots. We map coordinates to pull live reference stencils.
+              PinPic scans local geography to search for nearby photographic hotspots. We use GPS or IP location to pull live 1–2 km reference stencils.
             </p>
 
             {error && (
@@ -148,7 +111,7 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
                 disabled={loading}
                 className="w-full bg-emerald-500 hover:bg-emerald-600 text-black font-mono font-bold h-14 rounded-none transition-all duration-150 flex items-center justify-center gap-2 tracking-wider"
               >
-                {loading ? 'ACQUIRING FIX…' : 'GRANT LOCATION ACCESS'}
+                {loading ? 'RESOLVING LOCATION…' : 'DETECT LOCATION (GPS / IP)'}
                 {!loading && <ArrowRight className="h-4 w-4" />}
               </Button>
 
@@ -171,9 +134,16 @@ export default function PermissionsWizard({ onComplete, onClose }: PermissionsWi
             <h1 className="text-3xl font-bold tracking-tight text-white mb-4 uppercase font-mono">
               CAMERA VIEWPORT
             </h1>
-            <p className="text-sm text-zinc-400 leading-relaxed mb-8">
+            <p className="text-sm text-zinc-400 leading-relaxed mb-4">
               Overlay stencils directly onto your camera stream to align framing, angles, and horizon lines with reference images.
             </p>
+
+            {locationSource && (
+              <div className="mb-6 px-3 py-2 bg-zinc-900/80 border border-zinc-800 rounded text-[9px] font-mono text-zinc-400 uppercase tracking-widest flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                Location Fix: <span className="text-emerald-400 font-bold">{locationSource.toUpperCase()}</span> ({cachedCoords?.latitude.toFixed(3)}°, {cachedCoords?.longitude.toFixed(3)}°)
+              </div>
+            )}
 
             {error && (
               <div className="flex items-start gap-3 border border-red-950/40 bg-red-950/10 p-4 mb-6 text-xs text-red-400 font-mono">
