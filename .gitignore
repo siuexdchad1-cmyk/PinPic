@@ -49,3 +49,6 @@ next-env.d.ts
 .idea/
 *.swp
 *.swo
+
+# Excluded starter template (separate git repo)
+_nextjs-leaflet-starter/
