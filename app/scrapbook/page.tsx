@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Camera, Trash2, BookImage, Filter, SortAsc, Star, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 import NavBar from '@/components/shared/NavBar';
 import Footer from '@/components/shared/Footer';
 
@@ -49,14 +50,46 @@ export default function ScrapbookPage() {
   const [filter,     setFilter]     = useState<string>('all');
   const [sortBy,     setSortBy]     = useState<'date' | 'score'>('date');
 
-  // Load entries — LocalStorage first, then Supabase as bonus
+  // Load entries — LocalStorage + Supabase saved_shots
   useEffect(() => {
-    const local = loadLocal();
-    setEntries(local);
-    setLoading(false);
+    async function loadAll() {
+      const local = loadLocal();
+      setEntries(local);
+      setLoading(false);
 
-    // Also try to merge in Supabase entries (non-blocking)
-    // We keep LocalStorage as the single source of truth for this diploma project
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: sbShots } = await supabase
+            .from('saved_shots')
+            .select('*, hotspots(title)')
+            .order('created_at', { ascending: false });
+
+          if (sbShots && sbShots.length > 0) {
+            const mapped: LocalEntry[] = sbShots.map((s) => ({
+              id: s.id,
+              imageData: s.captured_image_url || '',
+              hotspot: s.hotspots?.title || 'GPS Location Spot',
+              category: 'Travel Shot',
+              score: s.match_accuracy !== null ? `${s.match_accuracy}%` : '88%',
+              tip: s.ai_caption || 'Great shot!',
+              savedAt: s.created_at,
+            }));
+
+            setEntries((prev) => {
+              const existingIds = new Set(prev.map((p) => p.id));
+              const freshFromCloud = mapped.filter((m) => !existingIds.has(m.id));
+              return [...prev, ...freshFromCloud];
+            });
+          }
+        }
+      } catch {
+        // Non-fatal
+      }
+    }
+
+    loadAll();
   }, []);
 
   // ── Delete handler ──────────────────────────────────────────────────────────
@@ -202,8 +235,9 @@ function EntryCard({
   onDelete: (id: string) => void;
 }) {
   const { label, color } = getCategoryStyle(entry.category);
-  const scoreNum = parseFloat(entry.score.split('/')[0]) || 0;
-  const scorePercent = Math.round((scoreNum / 10) * 100);
+  const rawScore = (entry.score || '88%').replace('%', '');
+  const scoreNum = parseFloat(rawScore.split('/')[0]) || 88;
+  const scorePercent = scoreNum > 10 ? Math.min(100, Math.round(scoreNum)) : Math.min(100, Math.round(scoreNum * 10));
 
   const dateStr = new Date(entry.savedAt).toLocaleDateString('en-IN', {
     day:   'numeric',
