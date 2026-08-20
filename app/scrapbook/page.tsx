@@ -20,10 +20,10 @@ interface LocalEntry {
 
 // ── Category Config ────────────────────────────────────────────────────────────
 const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
-  'Golden Hour Viewpoint': { label: '🌅 Golden Hour',  color: '#f59e0b' },
-  'Portrait Spot':         { label: '🧍 Portrait',     color: '#10b981' },
-  'Architecture Angle':   { label: '🏛️ Architecture', color: '#6366f1' },
-  'Nature Shot':           { label: '🌿 Nature',       color: '#22c55e' },
+  'Golden Hour Viewpoint': { label: 'Golden Hour',  color: '#f59e0b' },
+  'Portrait Spot':         { label: 'Portrait',     color: '#10b981' },
+  'Architecture Angle':   { label: 'Architecture', color: '#6366f1' },
+  'Nature Shot':           { label: 'Nature',       color: '#22c55e' },
 };
 
 function getCategoryStyle(cat: string) {

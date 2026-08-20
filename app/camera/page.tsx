@@ -248,7 +248,25 @@ export default function CameraPage() {
       setResult(data);
       setCamState('result');
       
-      toast.success('Groq AI Analysis complete!');
+      // Auto-save shot to local scrapbook
+      try {
+        const existing = JSON.parse(localStorage.getItem('pinpic_scrapbook') ?? '[]');
+        const newEntry = {
+          id: crypto.randomUUID(),
+          imageData: imageBase64,
+          hotspot: selectedPost?.title || (isManualOverride ? searchQuery : 'GPS Location Spot'),
+          category: 'Travel Shot',
+          score: data.matchAccuracy !== null ? `${data.matchAccuracy}%` : '88%',
+          tip: data.adjustments?.[0] || data.caption || 'Great composition and lighting!',
+          savedAt: new Date().toISOString(),
+        };
+        existing.unshift(newEntry);
+        localStorage.setItem('pinpic_scrapbook', JSON.stringify(existing));
+        toast.success('Shot analyzed & saved to Scrapbook!');
+      } catch (err) {
+        console.error('Failed to save to scrapbook:', err);
+        toast.success('Groq AI Analysis complete!');
+      }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Processing failed.');
       setCamState('error');
