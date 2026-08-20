@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Camera, BookImage, LayoutDashboard, MapPin, User } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Camera, BookImage, LayoutDashboard, MapPin, User, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/client';
+import { toast } from 'sonner';
 import SplitText from '@/components/ui/SplitText';
 
 const navLinks = [
@@ -16,6 +18,15 @@ const navLinks = [
 
 export default function NavBar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const supabase = createClient();
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    toast.success('Signed out successfully.');
+    router.push('/login');
+    router.refresh();
+  };
 
   return (
     <header className="sticky top-0 z-40 border-b border-zinc-800 bg-black">
@@ -55,7 +66,7 @@ export default function NavBar() {
           ))}
         </nav>
 
-        {/* Right Action: Direct "Take a Picture" CTA + Account Avatar */}
+        {/* Right Action: Direct "Take a Picture" CTA + Account Avatar + Sign Out */}
         <div className="flex items-center gap-2">
           
           {/* Prominent "Take a Picture" CTA Button */}
@@ -79,6 +90,16 @@ export default function NavBar() {
           >
             <User className="h-4 w-4" />
           </Link>
+
+          {/* Sign Out Button */}
+          <button
+            onClick={handleSignOut}
+            className="h-8 px-2.5 flex items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-950 hover:bg-red-950/40 hover:border-red-900/60 text-zinc-400 hover:text-red-400 text-[10px] font-mono font-bold uppercase transition-colors"
+            title="Sign Out of Account"
+          >
+            <LogOut className="h-3.5 w-3.5 text-red-500" />
+            <span className="hidden md:inline">Sign Out</span>
+          </button>
         </div>
       </div>
     </header>
